@@ -1,14 +1,3 @@
-// =============================================================================
-// SCPU.v  —  5-stage Pipelined RISC-V CPU
-// 修复清单：
-//   FIX 1: IF_ID flush 由 1'b0 改为 (is_jump | branch_taken)
-//   FIX 2: ID_EX 新增 funct3 打包传递，避免阶段 mismatch
-//   FIX 3: ID_EX 的 ALUsrc 重复打包 bug 已修正
-//   FIX 4: 新增 Forwarding Unit（EX-EX 和 MEM-EX 转发）
-//   FIX 5: 新增 Hazard Detection Unit（Load-Use stall）
-//   FIX 6: 多跳转时同时 flush IF/ID 和 ID/EX（各一周期）
-// =============================================================================
-
 module SCPU(
     input         clk,
     input         reset,
@@ -24,9 +13,9 @@ module SCPU(
     input         INT
 );
 
-// =============================================================================
-// 基本信号声明
-// =============================================================================
+
+wire is_predict_taken;
+wire mispredicted;
 wire [31:0] instruction;
 wire [6:0]  opcode;
 wire [4:0]  rs1, rs2, rd;
@@ -46,27 +35,20 @@ wire [31:0] rd1_mux, rd2_mux;
 wire        Zero, Neg, Of, Cy;
 wire        jump_taken;
 
-// =============================================================================
-// PC 寄存器
-// =============================================================================
 reg  [31:0] PC;
 wire [31:0] next_PC;
-wire        pc_stall;               // FIX 5: Load-Use stall 时冻结 PC
+wire        pc_stall;             
 
 always @(posedge clk or posedge reset) begin
     if (reset)
         PC <= 32'h00000000;
-    else if (!pc_stall)             // FIX 5
+    else if (!pc_stall)            
         PC <= next_PC;
 end
 
 assign PC_out = PC;
 
-// =============================================================================
-// IF/ID 流水线寄存器
-// FIX 6: flush = is_jump | branch_taken  (跳转确认在 EX，需立刻冲刷 IF/ID)
-// FIX 5: stall 时 write_enable = 0，保持 IF/ID 内容
-// =============================================================================
+
 wire [63:0] IF_ID_in, IF_ID_out;
 wire [31:0] IF_ID_instruction, IF_ID_PC;
 
@@ -75,14 +57,14 @@ assign IF_ID_in = {inst_in, PC};
 wire is_jump;
 wire branch_taken;
 wire flush_IF_ID;
-wire if_id_stall;                   // FIX 5
+wire if_id_stall;                 
 
-assign flush_IF_ID = (is_jump | branch_taken)& !pc_stall;  // FIX 1 / FIX 6
+assign flush_IF_ID = (is_jump | mispredicted | is_predict_taken) & !pc_stall;
 
 GRE_array #(.WIDTH(64)) IF_ID(
     .clk(clk),
     .rst(reset),
-    .write_enable(!if_id_stall),    // FIX 5: stall 时保持
+    .write_enable(!if_id_stall),   
     .flush(flush_IF_ID),
     .in(IF_ID_in),
     .out(IF_ID_out)
@@ -98,9 +80,7 @@ assign rs2         = IF_ID_instruction[24:20];
 assign rd          = IF_ID_instruction[11:7];
 assign funct3      = IF_ID_instruction[14:12];
 
-// =============================================================================
-// 控制单元 & ALU 控制（ID 阶段）
-// =============================================================================
+
 wire [2:0] dm_ctrl_id;
 
 control u_control(
@@ -125,6 +105,7 @@ ALUcontrol u_ALUcontrol(
 wire MEM_WB_RegWrite;
 wire [4:0]  MEM_WB_rd;
 wire [31:0] reg_data_final;
+wire ID_branch_taken; //predict one
 
 RF u_rf(
     .clk(clk),
@@ -137,6 +118,23 @@ RF u_rf(
 );
 
 immgen u_immgen(.instruction(IF_ID_instruction), .imm(imm));
+/*
+module predict(
+    input         clk,
+    input         reset,
+    input  [31:0] ID_EX_PC,      
+    input         ID_EX_Branch,      
+    input  [31:0] IF_ID_PC,     
+    input         branch_taken,   
+    output        predict_jump 
+);
+*/
+
+
+
+assign is_predict_taken = ID_branch_taken & Branch;
+
+
 
 // =============================================================================
 // ID/EX 流水线寄存器
@@ -165,17 +163,17 @@ immgen u_immgen(.instruction(IF_ID_instruction), .imm(imm));
 //   [63:32]    imm      (32位)
 //   [31:0]     PC       (32位)
 // =============================================================================
-wire [163:0] ID_EX_in, ID_EX_out;
+wire [164:0] ID_EX_in, ID_EX_out;
 wire         flush_ID_EX;
 wire         id_ex_bubble;          // FIX 5: load-use stall 时插入 bubble
 wire         is_jal;
 
 // FIX 6: 跳转时同时 flush IF/ID 和 ID/EX
-assign flush_ID_EX = (is_jump | branch_taken)& !pc_stall;
+assign flush_ID_EX = (is_jump | mispredicted) & !pc_stall;
 assign is_jal = Branch & RegDst;
 // FIX 5: load-use stall 时，ID/EX 写入全零 bubble（控制信号清零）
-assign ID_EX_in = id_ex_bubble ? 164'b0 : {
-    is_jal,Jump, Branch, RegWrite, ALUsrc, MemWrite, MemRead, MemtoReg, RegDst,  // [162:155]
+assign ID_EX_in = id_ex_bubble ? 165'b0 : {
+    is_predict_taken,is_jal,Jump, Branch, RegWrite, ALUsrc, MemWrite, MemRead, MemtoReg, RegDst,  // [162:155]
     dm_ctrl_id,                                                             // [154:152]
     ALUoperation, AUIPC, LUI,                                              // [151:146]
     funct3,                                                                 // [145:143]
@@ -183,7 +181,7 @@ assign ID_EX_in = id_ex_bubble ? 164'b0 : {
     rd1, rd2, imm, IF_ID_PC                                               // [127:0]
 };
 
-GRE_array #(.WIDTH(164)) ID_EX(
+GRE_array #(.WIDTH(165)) ID_EX(
     .clk(clk),
     .rst(reset),
     .write_enable(1'b1),
@@ -200,7 +198,9 @@ wire [3:0]  ID_EX_ALUoperation;
 wire [2:0]  ID_EX_funct3;
 wire [4:0]  ID_EX_rs1, ID_EX_rs2, ID_EX_rd;
 wire [31:0] ID_EX_rd1, ID_EX_rd2, ID_EX_imm, ID_EX_PC;
+wire iD_EX_predict;
 
+assign ID_EX_predict      = ID_EX_out[164];
 assign ID_EX_is_jal       = ID_EX_out[163];
 assign ID_EX_Jump         = ID_EX_out[162];
 assign ID_EX_Branch       = ID_EX_out[161];
@@ -351,29 +351,52 @@ jump u_jump(
 // =============================================================================
 // PC 选择逻辑（EX 阶段确认跳转/分支）
 // =============================================================================
-assign branch_taken  = ID_EX_Branch & (jump_taken| ID_EX_is_jal);
-
+assign branch_taken = ID_EX_Branch & (jump_taken | ID_EX_is_jal);
 wire [31:0] branch_target;
 assign branch_target = ID_EX_PC + ID_EX_imm;
-
 assign is_jump = ID_EX_Jump;
-
 wire [31:0] jump_target;
-assign jump_target = (forward_A_val + ID_EX_imm) & ~32'b1;   // JALR: (rs1+imm)&~1; JAL 时 rd1 已为 PC
- 
+assign jump_target = (forward_A_val + ID_EX_imm) & ~32'b1;
 wire [31:0] PC_plus_4;
 assign PC_plus_4 = PC + 32'd4;
 
-wire [31:0] branch_jump_pc;
-mux u_mux_branch(
+// ===== 新增部分 =====
+
+// 1. ID阶段预测跳转的目标地址
+wire [31:0] id_branch_target;
+assign id_branch_target = IF_ID_PC + imm;   // imm来自immgen，IF_ID_PC已有
+
+// 2. EX阶段判断预测是否错误
+
+assign mispredicted = ID_EX_Branch & (branch_taken != ID_EX_predict);
+
+// 3. 预测错误时的修正PC
+wire [31:0] correct_pc;
+assign correct_pc = branch_taken ? branch_target : (ID_EX_PC + 32'd4);
+
+// ===== mux改为三级 =====
+
+// 第一级：默认PC+4，预测跳转时换成id_branch_target
+wire [31:0] pc_after_predict;
+mux u_mux_predict(
     .x(PC_plus_4),
-    .y(branch_target),
-    .signal(branch_taken),
-    .z(branch_jump_pc)
+    .y(id_branch_target),
+    .signal(is_predict_taken),   // 来自ID阶段：Branch & predict_jump
+    .z(pc_after_predict)
 );
 
+// 第二级：预测错误时覆盖上一级结果
+wire [31:0] pc_after_correct;
+mux u_mux_correct(
+    .x(pc_after_predict),
+    .y(correct_pc),
+    .signal(mispredicted),
+    .z(pc_after_correct)
+);
+
+// 第三级：无条件跳转覆盖一切（和原来的u_mux_jump一致）
 mux u_mux_jump(
-    .x(branch_jump_pc),
+    .x(pc_after_correct),
     .y(jump_target),
     .signal(is_jump),
     .z(next_PC)
@@ -427,6 +450,15 @@ GRE_array #(.WIDTH(104)) MEM_WB_reg(
     .flush(1'b0),
     .in(MEM_WB_in),
     .out(MEM_WB_out)
+);
+predict u_predict(
+    .clk(clk),
+    .reset(reset),
+    .ID_EX_PC(ID_EX_PC),
+    .ID_EX_Branch(ID_EX_Branch),
+    .IF_ID_PC(IF_ID_PC),
+    .branch_taken(branch_taken),
+    .predict_jump(ID_branch_taken)
 );
 
 // reg_data_final 已在前面定义并连接（WB 写回数据）
