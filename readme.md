@@ -11,3 +11,4 @@ assign jump_target = (forward_A_val + ID_EX_imm) & ~32'b1;//new
 ```
 - 3.28 成功实现流水线并PUSH.
 - 3.30 实现了在Mac上跑*Icarus Verilog*仿真,不需要vivado那么冗长的仿真步骤了.具体操作:替换`blk_mem_gen_4`和`dist_mem_gen_2`为.v文件,并运行`iverilog -o sim.out *.v && vvp sim.out`.
+- 3.30 增加了2bit(不带BTB的)动态预测.预测正确率:hit=46664 miss=11550 rate=80%
