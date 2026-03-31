@@ -3,9 +3,9 @@ module predict(
     input         clk,
     input         reset,
     input  [31:0] ID_EX_PC,      
-    input         EX_wea,      
+    input         ID_EX_Branch,      
     input  [31:0] IF_ID_PC,     
-    input         EX_jump,   
+    input         branch_taken,   
     output        predict_jump 
 );
 //2bit
@@ -21,8 +21,8 @@ always @(posedge clk or posedge reset) begin
         for (i = 0; i < 64; i = i + 1)
             counter[i] <= 2'b01;    // 复位为弱不跳转
     end
-    else if (EX_wea) begin
-        if (EX_jump) begin
+    else if (ID_EX_Branch) begin
+        if (branch_taken) begin
             if (counter[update_idx] != 2'b11)
                 counter[update_idx] <= counter[update_idx] + 1;
         end

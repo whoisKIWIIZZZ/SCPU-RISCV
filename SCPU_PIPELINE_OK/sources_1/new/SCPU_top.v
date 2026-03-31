@@ -49,7 +49,7 @@ wire [31:0] counter_out;
     wire counter2_OUT;
     Counter_x U9_Counter_x(
         .clk(~Clk_CPU),
-        .clk0(clkdiv[5]),
+        .clk0(clkdiv[7]),
         .clk1(clkdiv[10]),
         .clk2(clkdiv[12]),
         .counter_ch(counter_set),
