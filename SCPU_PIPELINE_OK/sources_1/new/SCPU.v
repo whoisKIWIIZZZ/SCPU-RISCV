@@ -30,7 +30,7 @@ wire [2:0]  dm_ctrl_wire;
 
 wire [31:0] rd1, rd2, reg_data;
 wire [31:0] alu_res;
-wire [31:0] alu_A, alu_B;          // ALU 实际输入（forwarding 后）
+wire [31:0] alu_A, alu_B;          
 wire [31:0] rd1_mux, rd2_mux;
 wire        Zero, Neg, Of, Cy;
 wire        jump_taken;
@@ -57,14 +57,14 @@ assign IF_ID_in = {inst_in, PC};
 wire is_jump;
 wire branch_taken;
 wire flush_IF_ID;
-wire if_id_stall;                 
+wire stall_IF_ID;                 
 
 assign flush_IF_ID = (is_jump | mispredicted | is_predict_taken) & !pc_stall;
 
 GRE_array #(.WIDTH(64)) IF_ID(
     .clk(clk),
     .rst(reset),
-    .write_enable(!if_id_stall),   
+    .write_enable(!stall_IF_ID),   
     .flush(flush_IF_ID),
     .in(IF_ID_in),
     .out(IF_ID_out)
@@ -99,9 +99,6 @@ ALUcontrol u_ALUcontrol(
     .ALUoperation(ALUoperation)
 );
 
-// =============================================================================
-// 寄存器堆（写回在 WB 阶段）
-// =============================================================================
 wire MEM_WB_RegWrite;
 wire [4:0]  MEM_WB_rd;
 wire [31:0] reg_data_final;
@@ -118,61 +115,17 @@ RF u_rf(
 );
 
 immgen u_immgen(.instruction(IF_ID_instruction), .imm(imm));
-/*
-module predict(
-    input         clk,
-    input         reset,
-    input  [31:0] ID_EX_PC,      
-    input         ID_EX_Branch,      
-    input  [31:0] IF_ID_PC,     
-    input         branch_taken,   
-    output        predict_jump 
-);
-*/
-
-
 
 assign is_predict_taken = ID_branch_taken & Branch;
 
-
-
-// =============================================================================
-// ID/EX 流水线寄存器
-// FIX 4/5: Load-Use stall 时插入 bubble（控制信号全零）
-// FIX 6:   跳转时 flush_ID_EX = 1（与 flush_IF_ID 同周期）
-//
-// 位宽分配（共 163 位，同原设计）：
-//   [162]      Jump
-//   [161]      Branch
-//   [160]      RegWrite
-//   [159]      ALUsrc
-//   [158]      MemWrite
-//   [157]      MemRead
-//   [156]      MemtoReg
-//   [155]      RegDst
-//   [154:152]  dm_ctrl  (3位)
-//   [151:148]  ALUoperation (4位)
-//   [147]      AUIPC
-//   [146]      LUI
-//   [145:143]  funct3   (3位)
-//   [142:138]  rs1      (5位)
-//   [137:133]  rs2      (5位)
-//   [132:128]  rd       (5位)
-//   [127:96]   rd1      (32位)
-//   [95:64]    rd2      (32位)
-//   [63:32]    imm      (32位)
-//   [31:0]     PC       (32位)
-// =============================================================================
 wire [164:0] ID_EX_in, ID_EX_out;
 wire         flush_ID_EX;
-wire         id_ex_bubble;          // FIX 5: load-use stall 时插入 bubble
+wire         stall_ID_EX;          
 wire         is_jal;
 
-// FIX 6: 跳转时同时 flush IF/ID 和 ID/EX
 assign flush_ID_EX = (is_jump | mispredicted) & !pc_stall;
 assign is_jal = Branch & RegDst;
-// FIX 5: load-use stall 时，ID/EX 写入全零 bubble（控制信号清零）
-assign ID_EX_in = id_ex_bubble ? 165'b0 : {
+assign ID_EX_in = stall_ID_EX ? 165'b0 : {
     is_predict_taken,is_jal,Jump, Branch, RegWrite, ALUsrc, MemWrite, MemRead, MemtoReg, RegDst,  // [162:155]
     dm_ctrl_id,                                                             // [154:152]
     ALUoperation, AUIPC, LUI,                                              // [151:146]
@@ -185,7 +138,7 @@ GRE_array #(.WIDTH(165)) ID_EX(
     .clk(clk),
     .rst(reset),
     .write_enable(1'b1),
-    .flush(flush_ID_EX),            // FIX 6
+    .flush(flush_ID_EX),          
     .in(ID_EX_in),
     .out(ID_EX_out)
 );
@@ -223,9 +176,6 @@ assign ID_EX_rd2          = ID_EX_out[95:64];
 assign ID_EX_imm          = ID_EX_out[63:32];
 assign ID_EX_PC           = ID_EX_out[31:0];
 
-// =============================================================================
-// EX/MEM 流水线寄存器（提前声明，供 Forwarding Unit 使用）
-// =============================================================================
 wire [107:0] EX_MEM_in, EX_MEM_out;
 
 wire EX_MEM_RegWrite, EX_MEM_MemtoReg, EX_MEM_RegDst;
@@ -239,9 +189,6 @@ assign {EX_MEM_RegWrite, EX_MEM_MemtoReg, EX_MEM_RegDst,
         EX_MEM_alu_res, EX_MEM_rd2_stored, EX_MEM_pc_plus_4,
         EX_MEM_rd} = EX_MEM_out;
 
-// =============================================================================
-// MEM/WB 流水线寄存器（提前声明，供 Forwarding Unit 使用）
-// =============================================================================
 wire [103:0] MEM_WB_in, MEM_WB_out;
 
 wire MEM_WB_MemtoReg, MEM_WB_RegDst;
@@ -251,21 +198,12 @@ assign {MEM_WB_RegWrite, MEM_WB_MemtoReg, MEM_WB_RegDst,
         MEM_WB_Data_in, MEM_WB_alu_res, MEM_WB_pc_plus_4,
         MEM_WB_rd} = MEM_WB_out;
 
-// WB 阶段写回数据（需要在 Forwarding 前确定）
+
 wire [31:0] reg_data_tmp;
 mux u_mux2(.x(MEM_WB_alu_res),  .y(MEM_WB_Data_in),   .signal(MEM_WB_MemtoReg), .z(reg_data_tmp));
 mux u_mux5(.x(reg_data_tmp),    .y(MEM_WB_pc_plus_4), .signal(MEM_WB_RegDst),   .z(reg_data_final));
 
-// =============================================================================
-// FIX 4: Forwarding Unit
-//
-// ForwardA/ForwardB 编码：
-//   2'b00 = 使用寄存器堆读出值（ID/EX.rd1 / ID/EX.rd2）
-//   2'b10 = EX-EX 转发（来自 EX/MEM.alu_res）
-//   2'b01 = MEM-EX 转发（来自 WB 阶段写回数据）
-//
-// EX-EX 优先于 MEM-EX（EX/MEM 的结果更新）
-// =============================================================================
+
 reg [1:0] ForwardA, ForwardB;
 
 always @(*) begin
@@ -303,34 +241,18 @@ always @(*) begin
     endcase
 end
 
-// =============================================================================
-// FIX 5: Hazard Detection Unit（Load-Use 冒险）
-//
-// 检测条件：
-//   ID/EX 是 load 指令（MemRead 有效）
-//   且 ID/EX.rd 与当前 IF/ID 指令的 rs1 或 rs2 相同
-// 处理方式：
-//   1. 冻结 PC（pc_stall = 1）
-//   2. 冻结 IF/ID 寄存器（if_id_stall = 1）
-//   3. 向 ID/EX 插入 bubble（id_ex_bubble = 1）
-// =============================================================================
 assign pc_stall    = ID_EX_MemRead &&
                      ((ID_EX_rd == rs1) || (ID_EX_rd == rs2)) &&
                      (ID_EX_rd != 5'b0);
 
-assign if_id_stall = pc_stall;
-assign id_ex_bubble = pc_stall;
+assign stall_IF_ID = pc_stall;
+assign stall_ID_EX = pc_stall;
 
-// =============================================================================
-// EX 阶段：LUI/AUIPC MUX → ALU
-// =============================================================================
 wire [31:0] rd1_lui_out, alu_A_pre, alu_B_pre;
 
-// LUI：将 rs1 替换为 0（imm 直接加 0）
+
 mux u_mux_lui(.x(forward_A_val), .y(32'b0),    .signal(ID_EX_LUI),   .z(rd1_lui_out));
-// AUIPC：将操作数 A 换为 PC
 mux u_muxA   (.x(rd1_lui_out),   .y(ID_EX_PC), .signal(ID_EX_AUIPC), .z(alu_A_pre));
-// ALUsrc：选择立即数还是寄存器作为操作数 B
 mux u_mux1   (.x(forward_B_val), .y(ID_EX_imm),.signal(ID_EX_ALUsrc),.z(alu_B_pre));
 
 assign alu_A = alu_A_pre;
@@ -340,17 +262,12 @@ alu u_alu(
     .A(alu_A), .B(alu_B), .ALUOp(ID_EX_ALUoperation),
     .C(alu_res), .Zero(Zero), .Neg(Neg), .Of(Of), .Cy(Cy)
 );
-
-// FIX 2: 使用 ID_EX_funct3（EX 阶段），不再用 IF/ID 阶段的 funct3
 jump u_jump(
     .Zero(Zero), .Negative(Neg), .Overflow(Of), .Carry(Cy),
     .funct3(ID_EX_funct3),
     .jump_taken(jump_taken)
 );
 
-// =============================================================================
-// PC 选择逻辑（EX 阶段确认跳转/分支）
-// =============================================================================
 assign branch_taken = ID_EX_Branch & (jump_taken | ID_EX_is_jal);
 wire [31:0] branch_target;
 assign branch_target = ID_EX_PC + ID_EX_imm;
@@ -360,32 +277,19 @@ assign jump_target = (forward_A_val + ID_EX_imm) & ~32'b1;
 wire [31:0] PC_plus_4;
 assign PC_plus_4 = PC + 32'd4;
 
-// ===== 新增部分 =====
-
-// 1. ID阶段预测跳转的目标地址
 wire [31:0] id_branch_target;
-assign id_branch_target = IF_ID_PC + imm;   // imm来自immgen，IF_ID_PC已有
-
-// 2. EX阶段判断预测是否错误
-
+assign id_branch_target = IF_ID_PC + imm;  
 assign mispredicted = ID_EX_Branch & (branch_taken != ID_EX_predict);
-
-// 3. 预测错误时的修正PC
 wire [31:0] correct_pc;
 assign correct_pc = branch_taken ? branch_target : (ID_EX_PC + 32'd4);
 
-// ===== mux改为三级 =====
-
-// 第一级：默认PC+4，预测跳转时换成id_branch_target
 wire [31:0] pc_after_predict;
 mux u_mux_predict(
     .x(PC_plus_4),
     .y(id_branch_target),
-    .signal(is_predict_taken),   // 来自ID阶段：Branch & predict_jump
+    .signal(is_predict_taken),   
     .z(pc_after_predict)
 );
-
-// 第二级：预测错误时覆盖上一级结果
 wire [31:0] pc_after_correct;
 mux u_mux_correct(
     .x(pc_after_predict),
@@ -393,8 +297,6 @@ mux u_mux_correct(
     .signal(mispredicted),
     .z(pc_after_correct)
 );
-
-// 第三级：无条件跳转覆盖一切（和原来的u_mux_jump一致）
 mux u_mux_jump(
     .x(pc_after_correct),
     .y(jump_target),
@@ -402,16 +304,13 @@ mux u_mux_jump(
     .z(next_PC)
 );
 
-// =============================================================================
-// EX/MEM 流水线寄存器
-// =============================================================================
 assign EX_MEM_in = {
-    ID_EX_RegWrite, ID_EX_MemtoReg, ID_EX_RegDst,  // [107:105]
-    ID_EX_MemWrite, ID_EX_dm_ctrl,                  // [104:101]
-    alu_res,                                         // [100:69]
-    forward_B_val,                                   // [68:37] 用转发后的 rd2（store 数据）
-    ID_EX_PC + 32'd4,                               // [36:5]  PC+4（JAL 写回）
-    ID_EX_rd                                         // [4:0]
+    ID_EX_RegWrite, ID_EX_MemtoReg, ID_EX_RegDst,  
+    ID_EX_MemWrite, ID_EX_dm_ctrl,                  
+    alu_res,                                         
+    forward_B_val,                                   
+    ID_EX_PC + 32'd4,                               
+    ID_EX_rd                                        
 };
 
 GRE_array #(.WIDTH(108)) EX_MEM_reg(
@@ -423,18 +322,12 @@ GRE_array #(.WIDTH(108)) EX_MEM_reg(
     .out(EX_MEM_out)
 );
 
-// =============================================================================
-// MEM 阶段：输出地址 & 写信号
-// =============================================================================
 assign Addr_out = EX_MEM_alu_res;
 assign Data_out = EX_MEM_rd2_stored;
 assign mem_w    = EX_MEM_MemWrite;
 assign dm_ctrl  = EX_MEM_dm_ctrl;
 assign CPU_MIO  = (Addr_out[31:16] != 16'b0);
 
-// =============================================================================
-// MEM/WB 流水线寄存器
-// =============================================================================
 assign MEM_WB_in = {
     EX_MEM_RegWrite, EX_MEM_MemtoReg, EX_MEM_RegDst,  // [103:101]
     Data_in,                                             // [100:69]
@@ -460,8 +353,5 @@ predict u_predict(
     .branch_taken(branch_taken),
     .predict_jump(ID_branch_taken)
 );
-
-// reg_data_final 已在前面定义并连接（WB 写回数据）
-// u_mux2 和 u_mux5 也已在前面实例化
 
 endmodule
