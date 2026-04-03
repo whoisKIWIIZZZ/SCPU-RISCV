@@ -207,17 +207,13 @@ mux u_mux5(.x(reg_data_tmp),    .y(MEM_WB_pc_plus_4), .signal(MEM_WB_RegDst),   
 reg [1:0] ForwardA, ForwardB;
 
 always @(*) begin
-    // ---- ForwardA（针对 rs1）----
-    // EX-EX: EX/MEM 阶段要写回 & 目标非 x0 & 与 rs1 匹配
     if (EX_MEM_RegWrite && (EX_MEM_rd != 5'b0) && (EX_MEM_rd == ID_EX_rs1))
         ForwardA = 2'b10;
-    // MEM-EX: MEM/WB 阶段要写回 & 目标非 x0 & 与 rs1 匹配 & EX/MEM 没命中
     else if (MEM_WB_RegWrite && (MEM_WB_rd != 5'b0) && (MEM_WB_rd == ID_EX_rs1))
         ForwardA = 2'b01;
     else
         ForwardA = 2'b00;
 
-    // ---- ForwardB（针对 rs2）----
     if (EX_MEM_RegWrite && (EX_MEM_rd != 5'b0) && (EX_MEM_rd == ID_EX_rs2))
         ForwardB = 2'b10;
     else if (MEM_WB_RegWrite && (MEM_WB_rd != 5'b0) && (MEM_WB_rd == ID_EX_rs2))
@@ -225,14 +221,12 @@ always @(*) begin
     else
         ForwardB = 2'b00;
 end
-
-// Forwarding MUX：为 ALU 的 A 输入选择正确数据
 reg [31:0] forward_A_val, forward_B_val;
 always @(*) begin
     case (ForwardA)
-        2'b10:   forward_A_val = EX_MEM_alu_res;    // EX-EX 转发
-        2'b01:   forward_A_val = reg_data_final;     // MEM-EX 转发（WB 写回值）
-        default: forward_A_val = ID_EX_rd1;          // 寄存器堆正常读值
+        2'b10:   forward_A_val = EX_MEM_alu_res;    
+        2'b01:   forward_A_val = reg_data_final;    
+        default: forward_A_val = ID_EX_rd1;         
     endcase
     case (ForwardB)
         2'b10:   forward_B_val = EX_MEM_alu_res;
