@@ -1,0 +1,32 @@
+WARNING: dist_mem_gen_2.v:14: $readmemh(./chess/chess.dat): Not enough words in the file for the requested range [0:1023].
+--- 开始发送 PS2 扫描码 ---
+!!! SUCCESS: Keyboard Ready! Received Data = 0x1c
+[INT] 触发! PC=0x00000578, PS2_Ready=1
+[INT] 触发! PC=0x00000578, PS2_Ready=1
+[INT] 触发! PC=0x00000574, PS2_Ready=0
+[INT] 触发! PC=0x00000574, PS2_Ready=0
+[PS2] 发送字节 0x1c 完成，时刻=541441000
+!!! SUCCESS: Keyboard Ready! Received Data = 0xf0
+[INT] 触发! PC=0x0000057c, PS2_Ready=1
+[INT] 触发! PC=0x0000057c, PS2_Ready=1
+[INT] 触发! PC=0x00000578, PS2_Ready=0
+[INT] 触发! PC=0x00000578, PS2_Ready=0
+[PS2] 发送字节 0xf0 完成，时刻=1081689000
+!!! SUCCESS: Keyboard Ready! Received Data = 0x1c
+[INT] 触发! PC=0x00000574, PS2_Ready=1
+[INT] 触发! PC=0x00000574, PS2_Ready=1
+[INT] 触发! PC=0x00000000, PS2_Ready=0
+[INT] 触发! PC=0x00000000, PS2_Ready=0
+[PS2] 发送字节 0x1c 完成，时刻=1621927000
+!!! SUCCESS: Keyboard Ready! Received Data = 0x32
+[INT] 触发! PC=0x0000057c, PS2_Ready=1
+[INT] 触发! PC=0x0000057c, PS2_Ready=1
+[INT] 触发! PC=0x00000578, PS2_Ready=0
+[INT] 触发! PC=0x00000578, PS2_Ready=0
+[PS2] 发送字节 0x32 完成，时刻=2362175000
+[VGA] 抓帧 1 完成
+[VGA] 抓帧 2 完成
+** VVP Stop(0) **
+** Flushing output streams.
+** Current simulation time is 55119175000 ticks.
+** Continue **
