@@ -38,6 +38,10 @@ ff810113
 ```verilog
 force uut.U9_Counter_x.counter0_OUT = 1'b0;  // 强制counter不触发
 ```
+或者,如果你的计时器中断正确写好了,你也得写这个:
+```verilog
+force uut.U9_Counter_x.counter_ch = 2'b0;//这个channel被SPIO驱动了,我们没有办法在仿真里验证.同时,代码里不能有对counter赋值的语句
+```
 # TIMELINE-BACKUP
 - 3.27 验收了单周期CPU
 - 发现在连续的JAL指令会出现bug,原因出自跳转确认被放置在了EX/MEM阶段.解决办法是在ID/EX特判一下JAL(没错,我单周期判断JAL是通过branch & RegDest的信号判断的而不是单独传一个JAL信号)
