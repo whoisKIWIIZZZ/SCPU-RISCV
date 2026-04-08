@@ -1,4 +1,4 @@
-module blk_mem_gen_4(
+module RAM(
     input  [9:0]  addra,
     input         clka,
     input  [31:0] dina,

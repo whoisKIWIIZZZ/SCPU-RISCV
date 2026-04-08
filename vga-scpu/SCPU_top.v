@@ -103,7 +103,7 @@ wire [31:0] ps2_scancode;
     wire [31:0] PC_out;
     SCPU U1_SCPU(
         .Data_in(Data_read),
-        .INT( ps2_ready),
+        .INT(ps2_ready),
         .MIO_ready(MIO_ready),
         .clk(Clk_CPU),
         .inst_in(ROM_output),
@@ -118,7 +118,7 @@ wire [31:0] ps2_scancode;
 
     wire [9:0] addra;
     wire [31:0] douta;
-    blk_mem_gen_4 U3_RAM_B(
+    RAM U3_RAM_B(
         .addra(addra),
         .clka(~clk),
         .dina(Data_write_to_dm),
@@ -161,8 +161,8 @@ wire [31:0] ps2_scancode;
     );
 
    
-    dist_mem_gen_2 U2_ROM_D(
-        .a({PC_out[11:2]}),
+    ROM U2_ROM_D(
+        .a({PC_out[12:2]}),
         .spo(ROM_output)
     );
 
@@ -205,16 +205,7 @@ wire [31:0] ps2_scancode;
     // VRAM：19x19棋盘状态，每格2bit，CPU通过地址0xC0000000~写入
     // 地址计算：offset = (row*19 + col) * 4
     // =============================================================================
-    // wire vram_we;
-    // wire [9:0] vram_addr;
-    wire [1:0] vram_din;
 
-    // VRAM写使能：地址高4位=0xC时命中
-    assign vram_we   = mem_w && (Addr_out[31:28] == 4'hC);
-    // VRAM地址：取偏移部分，除以4得到格子索引（0~360）
-    assign vram_addr = Addr_out[11:2];      // 低10位，去掉字节偏移
-    // 写入数据：只取低2bit（00空/01黑/10白）
-    assign vram_din  = Data_out[1:0];
 
     VGA_top U_VGA(
         .clk      (clk),           // 100MHz直接给VGA，内部自己分频

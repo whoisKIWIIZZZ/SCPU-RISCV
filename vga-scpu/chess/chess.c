@@ -1,9 +1,9 @@
 #pragma GCC optimize("O0")
 #include <stdint.h>
 
-#define RAM_DATA_BASE   0x00001000 
+#define RAM_DATA_BASE   0x000000C0 
 #define BOARD_BASE      0xC0000000 
-#define CNT_ADDR        0x00000F00 
+#define CNT_ADDR        0x000000F0 
 #define DISPLAY_ADDR    0xe0000000
 #define PS2_DATA_ADDR (*(volatile unsigned int *)0xF0000008)
 #define MOVE_CNT (*(volatile uint32_t *)CNT_ADDR)
