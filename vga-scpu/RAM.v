@@ -5,7 +5,7 @@ module RAM(
     input  [3:0]  wea,
     output [31:0] douta
 );
-    reg [31:0] RAM [0:2047];
+    reg [31:0] RAM [0:1023];
     integer i;
 
     initial begin

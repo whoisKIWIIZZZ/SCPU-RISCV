@@ -1,16 +1,16 @@
 #pragma GCC optimize("O0")
 #include <stdint.h>
 
-#define RAM_DATA_BASE   0x000000C0 
+#define RAM_DATA_BASE   0x00000200 
 #define BOARD_BASE      0xC0000000 
-#define CNT_ADDR        0x000000F0 
-#define DISPLAY_ADDR    0xe0000000
+#define CNT_ADDR        0x00000300 
+#define DISPLAY_ADDR    0xE0000000
 #define PS2_DATA_ADDR (*(volatile unsigned int *)0xF0000008)
 #define MOVE_CNT (*(volatile uint32_t *)CNT_ADDR)
 
 void main();
 void start(){
-    asm("li\tsp,1024"); // 初始化栈指针
+    asm("li\tsp,0x100"); // 初始化栈指针
     main();
     loop:goto loop; // 结束后原地打转)
 }
@@ -44,7 +44,7 @@ void store_move_to_ram(uint32_t index, uint32_t r, uint32_t c, uint32_t color) {
  * @brief 核心绘图函数
  */
 void set_piece(uint32_t row, uint32_t col, uint32_t color) {
-    // 假设棋盘是 8x8，线性映射 //gemini是傻逼吗?
+  
     volatile uint32_t *pixel_ptr = (uint32_t *)(BOARD_BASE + (row * 19 + col) * 4);
     *pixel_ptr = color;
 }
@@ -86,7 +86,7 @@ void __attribute__((interrupt)) keyboard_interrupt() {
 
         // 执行绘制
         set_piece(r, c, color);
-        int addr = (r<<4+c);
+        int addr = (r<<4)|c;
         write(DISPLAY_ADDR,addr);
 
         // 计数器自增
