@@ -94,6 +94,8 @@ endtask
 // 主仿真流程
 // =============================================================================
 initial begin
+//    $dumpfile("wave.vcd");   // 指定输出文件名
+//    $dumpvars(0, simulate); // 0 = 转储所有层级的信号
     // 初始化信号
     btn_i             = 5'b0;
     sw_i              = 16'b0;
@@ -105,36 +107,40 @@ initial begin
     PS2C_reg          = 1;
     PS2D_reg          = 1;
     rstn              = 0;
-    
-    #203; // 异步复位一段时间
+     force uut.U9_Counter_x.counter_ch = 2'b0;
+    #100; // 异步复位一段时间
     rstn = 1;
-    #1000000000000;
+    //#1000000000000;
 
     // 屏蔽干扰
-    // force uut.U9_Counter_x.counter_ch = 2'b0;
-
+   
+    
     // $display("--- 开始发送 PS2 扫描码 ---");
 
     // // 模拟按下 'A' (0x1C)
-    // ps2_send_byte(8'h29);
-    // ps2_send_byte(8'hF0);
-    // ps2_send_byte(8'h29);
-    // #30_000_000;
-    // // 模拟按下 'B' (0x32)
-    // ps2_send_byte(8'h32);
-    //     ps2_send_byte(8'hF0);
-    // ps2_send_byte(8'h32);
-    //  #30_000_000;
-    // ps2_send_byte(8'h29);
-    // ps2_send_byte(8'hF0);
-    // ps2_send_byte(8'h29);
-    // #30_000_000;
-    //     ps2_send_byte(8'h29);
-    // ps2_send_byte(8'hF0);
-    // ps2_send_byte(8'h29);
-    // #30_000_000;
+    ps2_send_byte(8'h29);
+    //#10_000_000;
+    ps2_send_byte(8'hF0);
+    ps2_send_byte(8'h29);
+    ps2_send_byte(8'h29);
+    ps2_send_byte(8'hF0);
+    ps2_send_byte(8'h29);
+    #30_000_000;
+    // 模拟按下 'B' (0x32)
+    ps2_send_byte(8'h32);
+        ps2_send_byte(8'hF0);
+    ps2_send_byte(8'h32);
+     #30_000_000;
+    ps2_send_byte(8'h29);
+    ps2_send_byte(8'hF0);
+    ps2_send_byte(8'h29);
+    #30_000_000;
+        ps2_send_byte(8'h29);
+    ps2_send_byte(8'hF0);
+    ps2_send_byte(8'h29);
+    #30_000_000;
 
-    // 运行一段时间观察中断和 VGA 抓帧
+    // // 运行一段时间观察中断和 VGA 抓帧
     #50_000_000;
     
     $display("Simulation ended normally");
@@ -145,12 +151,14 @@ end
 // CPU 状态实时监控 (保持原有显示逻辑)
 // =============================================================================
 always @(posedge uut.clk) begin
-    $display("pc:0x%h,X1:0x%h", uut.PC_out, uut.U1_SCPU.u_rf.rf[1]);
+    // if(uut.U3_RAM_B.RAM[1030])
+    //      $display("yes");
+   //$display("pc:0x%h,X31:0x%h,x15:0x%h,mepc:0x%h", uut.U1_SCPU.ID_EX_PC, uut.U1_SCPU.u_rf.rf[31],uut.U1_SCPU.u_rf.rf[15],uut.U1_SCPU.mepc);
     // $display("PC:0x%h|Ready:0x%h|ready:%h|get_rd:0x%h|RD:0x%h",uut.U1_SCPU.ID_EX_PC,uut.U_PS2.ps2_kbd.PS2_shift,uut.U_PS2.ps2_kbd.ready,uut.U_PS2.get_RD,uut.U_PS2.RD);
     // 中断监控
     if (uut.U1_SCPU.int_taken) begin
         int_trigger_count = int_trigger_count + 1;
-       // $display("[INT] 触发! PC=0x%h, PS2_Ready=%b", uut.PC_out, uut.U_PS2.PS2Ready);
+        $display("[INT] 触发! PC=0x%h, PS2_Ready=%b", uut.PC_out, uut.U_PS2.PS2Ready);
     end
 
     // 这里的 PC 显示有助于调试状态机跳转
@@ -166,23 +174,23 @@ end
 // =============================================================================
 // 原有的 PPM 抓帧逻辑 (VSYNC 触发)
 // =============================================================================
-// always @(negedge VSYNC) begin
-//     if (rstn && frame_count < 5) begin // 减少抓帧数量加快仿真
-//         frame_count = frame_count + 1;
-//         pixel_count = 0;
-//         $sformat(ppm_filename, "./frame_%0d.ppm", frame_count);
-//         ppm_fp = $fopen(ppm_filename, "w");
-//         $fwrite(ppm_fp, "P3\n640 480\n255\n");
-//         repeat(800*525) begin
-//             @(posedge uut.U_VGA.clk25);
-//             if (uut.U_VGA.active) begin
-//                 $fwrite(ppm_fp, "%0d %0d %0d\n", R*17, G*17, B*17);
-//                 pixel_count = pixel_count + 1;
-//             end
-//         end
-//         $fclose(ppm_fp);
-//         $display("[VGA] 抓帧 %0d 完成", frame_count);
-//     end
-// end
+always @(negedge VSYNC) begin
+    if (rstn && frame_count < 5) begin // 减少抓帧数量加快仿真
+        frame_count = frame_count + 1;
+        pixel_count = 0;
+        $sformat(ppm_filename, "./frame_%0d.ppm", frame_count);
+        ppm_fp = $fopen(ppm_filename, "w");
+        $fwrite(ppm_fp, "P3\n640 480\n255\n");
+        repeat(800*525) begin
+            @(posedge uut.U_VGA.clk25);
+            if (uut.U_VGA.active) begin
+                $fwrite(ppm_fp, "%0d %0d %0d\n", R*17, G*17, B*17);
+                pixel_count = pixel_count + 1;
+            end
+        end
+        $fclose(ppm_fp);
+        $display("[VGA] 抓帧 %0d 完成", frame_count);
+    end
+end
 
 endmodule

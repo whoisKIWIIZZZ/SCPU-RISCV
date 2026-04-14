@@ -71,7 +71,7 @@ always @(posedge clk or posedge reset) begin
     if (reset)
         mepc <= 32'h0;
     else if (int_taken)
-        mepc <= IF_ID_PC;        // 保存当前PC，中断返回后从这里继续
+        mepc <= PC;        // 保存当前PC，中断返回后从这里继续
 end
 
 // ie：中断发生时关中断，mret时重新开中断
@@ -429,7 +429,7 @@ mux u_mux_mret(
 // 第五级：中断跳转（最高优先级，覆盖一切）
 mux u_mux_int(
     .x(pc_after_mret),
-    .y(32'h000002b4),      // 中断向量地址，ROM里这里放中断处理程序
+    .y(32'h0000017c),      // 中断向量地址，ROM里这里放中断处理程序
     .signal(int_taken),
     .z(next_PC)
 );

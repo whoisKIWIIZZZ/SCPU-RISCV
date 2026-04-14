@@ -13,6 +13,15 @@ force uut.U9_Counter_x.counter_ch = 2'b0;
 //这个channel被SPIO驱动了,我们没有办法在仿真里验证.
 //同时,代码里不能有对counter赋值的语句.
 ```
+
+4.14:在中断的计数器,我用了`x31`作为全局计数器.问题在于,中断函数会自动保存`x31`.所以,你需要手动找到dat并且把那条指令弄成`00000013`.
+
+并且,![thx zoomy](image.png).所以,在`coe`的末尾,加上
+```asm
+ff9ff06f
+ff5ff06f
+```
+来防止出现潜在的BUG.
 # TIMELINE-BACKUP
 - 3.27 验收了单周期CPU
 - 发现在连续的JAL指令会出现bug,原因出自跳转确认被放置在了EX/MEM阶段.解决办法是在ID/EX特判一下JAL(没错,我单周期判断JAL是通过branch & RegDest的信号判断的而不是单独传一个JAL信号)

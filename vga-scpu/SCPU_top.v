@@ -116,10 +116,10 @@ wire [31:0] ps2_scancode;
         .mem_w(mem_w)
     );
 
-    wire [9:0] addra;
+    wire [31:0] addra;
     wire [31:0] douta;
     RAM U3_RAM_B(
-        .addra(addra),
+        .addra(addra[12:2]),
         .clka(~clk),
         .dina(Data_write_to_dm),
         .wea(wea_mem),

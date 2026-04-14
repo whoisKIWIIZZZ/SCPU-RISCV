@@ -1,17 +1,18 @@
 module RAM(
-    input  [9:0]  addra,
+    input  [10:0]  addra,
     input         clka,
     input  [31:0] dina,
     input  [3:0]  wea,
     output [31:0] douta
 );
-    reg [31:0] RAM [0:1023];
+    reg [31:0] RAM [0:4098];
     integer i;
 
     initial begin
-        for (i = 0; i < 1024; i = i + 1) begin
+        for (i = 0; i < 4098; i = i + 1) begin
             RAM[i] = 32'h00000000;
         end
+        RAM[1030] = 32'h00000000;
     end
 
     always @(posedge clka) begin

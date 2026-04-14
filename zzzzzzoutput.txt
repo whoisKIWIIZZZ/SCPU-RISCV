@@ -1,0 +1,15 @@
+WARNING: ROM.v:14: $readmemh(./chess/chess.dat): Not enough words in the file for the requested range [0:1023].
+[INT] 触发! PC=0x00000440, PS2_Ready=1
+[INT] 触发! PC=0x00000440, PS2_Ready=1
+[INT] 触发! PC=0x00000440, PS2_Ready=0
+[INT] 触发! PC=0x00000440, PS2_Ready=0
+[PS2] 发送字节 0x29 完成，时刻=540338000
+[INT] 触发! PC=0x00000448, PS2_Ready=1
+[INT] 触发! PC=0x00000448, PS2_Ready=1
+[INT] 触发! PC=0x00000448, PS2_Ready=0
+[INT] 触发! PC=0x00000448, PS2_Ready=0
+[PS2] 发送字节 0x29 完成，时刻=1080576000
+[VGA] 抓帧 1 完成
+[VGA] 抓帧 2 完成
+Simulation ended normally
+SCPU_top_tb.v:147: $finish called at 51080576000 (1ps)

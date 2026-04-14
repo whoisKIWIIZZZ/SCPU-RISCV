@@ -1,16 +1,15 @@
 #pragma GCC optimize("O0")
 #include <stdint.h>
 
-#define RAM_DATA_BASE   0x00000200 
+#define RAM_DATA_BASE   0x00000410 
 #define BOARD_BASE      0xC0000000 
-#define CNT_ADDR        0x00000300 
 #define DISPLAY_ADDR    0xE0000000
 #define PS2_DATA_ADDR (*(volatile unsigned int *)0xF0000008)
-#define MOVE_CNT (*(volatile uint32_t *)CNT_ADDR)
 
+register uint32_t MOVE_CNT asm("x31");
 void main();
 void start(){
-    asm("li\tsp,0x100"); // 初始化栈指针
+    asm("li\tsp,0x400"); // 初始化栈指针
     main();
     loop:goto loop; // 结束后原地打转)
 }
@@ -49,26 +48,6 @@ void set_piece(uint32_t row, uint32_t col, uint32_t color) {
     *pixel_ptr = color;
 }
 
-/**
- * @brief 中断服务程序 (ISR)
- * 每次中断执行一个 set piece 动作
- */
-void __attribute__((interrupt)) timer_interrupt_handler() {
-    if (MOVE_CNT < total_moves) {
-        Move *base = (Move *)RAM_DATA_BASE;
-        
-        // 从 RAM 中取出当前计数器对应的棋步
-        uint32_t r = base[MOVE_CNT].row;
-        uint32_t c = base[MOVE_CNT].col;
-        uint32_t color = base[MOVE_CNT].color;
-
-        // 执行绘制
-        set_piece(r, c, color);
-
-        // 计数器自增
-        MOVE_CNT = MOVE_CNT + 1;
-    }
-}
 
 void __attribute__((interrupt)) keyboard_interrupt() { 
     unsigned char key;
@@ -88,9 +67,13 @@ void __attribute__((interrupt)) keyboard_interrupt() {
         set_piece(r, c, color);
         int addr = (r<<4)|c;
         write(DISPLAY_ADDR,addr);
-
+        asm volatile (
+            "lw   t6, 44(sp)\n"  // 取出栈里存的旧 x31
+            "addi t6, t6, 1\n"    // 自增
+            "sw   t6, 44(sp)\n"  // 写回栈里
+        );
         // 计数器自增
-        MOVE_CNT = MOVE_CNT + 1;
+        MOVE_CNT++;
     }
     }
 

@@ -33,7 +33,7 @@ module MIO_BUS(clk, rst, BTN, SW, PC, mem_w, Cpu_data2bus, addr_bus,
   input counter2_out;
   output [31:0]Cpu_data4bus;
   output [31:0]ram_data_in;
-  output [9:0]ram_addr;
+  output [31:0]ram_addr;
   output data_ram_we;
   output GPIOf0000000_we;
   output GPIOe0000000_we;
@@ -65,6 +65,6 @@ assign Cpu_data4bus =
     32'h0;
 
   assign ram_data_in  = Cpu_data2bus;
-  assign ram_addr = (addr_bus[31:28] == 4'h0) ? addr_bus[11:2] : 10'h0;
+  assign ram_addr = (addr_bus[31:28] == 4'h0) ? addr_bus:32'h0;
   assign Peripheral_in = Cpu_data2bus;
 endmodule
