@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
 module main(btn_i, clk, sw_i, rstn, led_o, disp_an_o, disp_seg_o,
-            VGA_HSYNC, VGA_VSYNC, VGA_R, VGA_G, VGA_B,PS2C,PS2D);  // 新增
+            VGA_HSYNC, VGA_VSYNC, VGA_R, VGA_G, VGA_B,PS2C,PS2D,AUD_PWM,AUD_SD);  // 新增
 
     input [4:0] btn_i;
     input clk;
@@ -14,6 +14,8 @@ module main(btn_i, clk, sw_i, rstn, led_o, disp_an_o, disp_seg_o,
     output [3:0]  VGA_R;
     output [3:0]  VGA_G;
     output [3:0]  VGA_B;
+    output AUD_PWM;
+    output AUD_SD;
     inout PS2C;
 inout PS2D;
 wire [31:0] counter_out;
@@ -21,6 +23,20 @@ wire [31:0] counter_out;
     wire [4:0] BTN_out;
     wire [15:0] SW_out;
         wire        ps2_ready;
+
+    
+    wire audio_we;
+    wire [31:0] audio_in;
+    audio EX2_audio(
+        .clk(clk),
+        .rst(~rstn),
+        .audio_we(audio_we),
+        .audio_in(audio_in),
+        .AUD_PWM(AUD_PWM),
+        .AUD_SD(AUD_SD)
+    );
+
+
     Enter U10_Enter(
         .clk(clk),
         .BTN(btn_i),
@@ -134,6 +150,8 @@ wire [31:0] ps2_scancode;
     MIO_BUS U4_MIO_BUS(
         .BTN(BTN_out),
         .Cpu_data2bus(Data_out),
+        .audio(audio_in),
+        .audio_we(audio_we),
         .PC(PC_out),
         .SW(SW_out),
         .addr_bus(Addr_out),

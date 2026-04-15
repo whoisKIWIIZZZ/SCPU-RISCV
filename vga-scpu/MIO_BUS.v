@@ -15,7 +15,7 @@
 module MIO_BUS(clk, rst, BTN, SW, PC, mem_w, Cpu_data2bus, addr_bus, 
   ram_data_out, led_out, counter_out, counter0_out, counter1_out, counter2_out, Cpu_data4bus, 
   ram_data_in, ram_addr, data_ram_we, GPIOf0000000_we, GPIOe0000000_we, counter_we, 
-  Peripheral_in,vram_we,vram_addr,vram_dout,ps2_ready,ps2_key);
+  Peripheral_in,vram_we,vram_addr,vram_dout,ps2_ready,ps2_key,audio,audio_we);
 
   input clk;
   input rst;
@@ -38,6 +38,8 @@ module MIO_BUS(clk, rst, BTN, SW, PC, mem_w, Cpu_data2bus, addr_bus,
   output GPIOf0000000_we;
   output GPIOe0000000_we;
   output counter_we;
+  output [31:0] audio;
+  output audio_we;
   output [31:0]Peripheral_in;
 output vram_we;
 output [9:0] vram_addr;
@@ -55,6 +57,10 @@ input [7:0]  ps2_key;
   assign GPIOf0000000_we  = (mem_w && (addr_bus[31:28] == 4'hf)) ? 1'b1 : 1'b0;
   assign GPIOe0000000_we  = (mem_w && (addr_bus[31:28] == 4'he) && (addr_bus[3:0] == 4'h0)) ? 1'b1 : 1'b0;
   assign counter_we       = (mem_w && (addr_bus[31:28] == 4'he) && (addr_bus[3:0] != 4'h0)) ? 1'b1 : 1'b0;
+  assign audio=(addr_bus[31:28]==4'hb)?Cpu_data2bus[31:0]:32'h0;
+  assign audio_we=(mem_w&&(addr_bus[31:28]==4'hb))?1'b1:1'b0;
+
+
 
 assign Cpu_data4bus = 
     (addr_bus[31:28]==4'h0) ? ram_data_out :

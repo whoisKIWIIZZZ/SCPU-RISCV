@@ -37,6 +37,6 @@ assign jump_target = (forward_A_val + ID_EX_imm) & ~32'b1;//new
 - 4.4 实现了`RISCV-GNU-TOOLS`工具链的安装,开始自己写代码汇编
 - 4.7 实现了VGA模块和PS2模块(也许).
 - 4.13 i hate rebuttal.
-
+- 4.15 实现了声音,UNISON.
 # Acknowledge
 - thx [Zoomy](https://github.com/zoomy14112/SingleCPU)
