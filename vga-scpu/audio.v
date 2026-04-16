@@ -53,8 +53,25 @@ module audio(
     // 重点：这里改回 1'b1 和 1'b0，不再用 1'bz
     assign AUD_PWM = (pwm_cnt < mix_sum) ? 1'b1 : 1'b0;
 
-    // --- 4. 强制开启 AUD_SD ---
-    // 有些开发板如果这个引脚不持续给 1，功放芯片会进入休眠
-    assign AUD_SD = 1'b1; 
+    reg SD_out;
+    reg [31:0] counter;
+    always@(posedge clk or posedge rst)
+    begin
+        if(rst)
+        begin
+            SD_out<=1'b0;
+            counter<=32'h0;
+        end
+        else if(audio_we)
+        begin
+            SD_out<=1'b1;
+            counter<=32'h0;
+        end
+        else if(counter[25])
+            SD_out<=1'b0;
+        else
+            counter<=counter+1'b1;
+    end
+    assign AUD_SD=SD_out;
 
 endmodule
