@@ -27,13 +27,17 @@ wire [31:0] counter_out;
     
     wire audio_we;
     wire [31:0] audio_in;
-    audio EX2_audio(
+    audio #(.MAX_VOICES(8)) EX2_audio(
         .clk(clk),
         .rst(~rstn),
         .audio_we(audio_we),
         .audio_in(audio_in),
         .AUD_PWM(AUD_PWM),
-        .AUD_SD(AUD_SD)
+        .AUD_SD(AUD_SD),
+        .detune_in(detune_out),
+        .detune_we(detune_we),
+        .unison_in(unison_out),
+        .unison_we(unison_we)
     );
 
 
@@ -117,6 +121,7 @@ wire [31:0] ps2_scancode;
     wire MIO_ready=1'b1;
     wire [31:0] Data_out;
     wire [31:0] PC_out;
+    wire [31:0] mret;
     SCPU U1_SCPU(
         .Data_in(Data_read),
         .INT(ps2_ready),
@@ -129,7 +134,8 @@ wire [31:0] ps2_scancode;
         .Data_out(Data_out),
         .PC_out(PC_out),
         .dm_ctrl(dm_ctrl),
-        .mem_w(mem_w)
+        .mem_w(mem_w),
+        .mret(mret)
     );
 
     wire [31:0] addra;
@@ -144,7 +150,8 @@ wire [31:0] ps2_scancode;
     wire        vram_we;
     wire [9:0]  vram_addr;
     wire [1:0]  vram_dout;
-
+    wire [31:0] detune_out,unison_out;
+    wire        detune_we,unison_we;
     
     wire GPIOe0000000_we;
     MIO_BUS U4_MIO_BUS(
@@ -175,7 +182,11 @@ wire [31:0] ps2_scancode;
         .vram_addr(vram_addr),
         .vram_dout(vram_dout),
         .ps2_ready(ps2_ready),
-        .ps2_key(ps2_key)
+        .ps2_key(ps2_key),
+        .detune_out(detune_out),
+        .detune_we(detune_we),
+        .unison_out(unison_out),
+        .unison_we(unison_we)
     );
 
    
@@ -193,7 +204,7 @@ wire [31:0] ps2_scancode;
         .Switch(SW_out[7:5]),
         .clk(~Clk_CPU),
         .data0(Peripheral_in),
-        .data1({{2'b0},PC_out[31:2]}),
+        .data1(mret),
         .data2(ROM_output),
         .data3(counter_out),
         .data4(Addr_out),

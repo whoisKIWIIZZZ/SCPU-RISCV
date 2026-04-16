@@ -1,77 +1,136 @@
 `timescale 1ns / 1ps
-module audio(
+module audio #(
+    parameter MAX_VOICES = 8
+)(
     input clk,
     input rst,
     input audio_we,
     input [31:0] audio_in,
+
+    // 新增控制接口
+    input [31:0] unison_in,
+    input        unison_we,
+    input [31:0] detune_in,
+    input        detune_we,
+
     output AUD_PWM,
     output AUD_SD
 );
-    reg [31:0] audio_reg;
-    always @(posedge clk or posedge rst) begin
-        if(rst) audio_reg <= 32'd0;
-        else if(audio_we) audio_reg <= audio_in;
+
+// ---- 音频频率寄存器 ----
+reg [31:0] audio_reg;
+always @(posedge clk or posedge rst) begin
+    if (rst)           audio_reg <= 32'd0;
+    else if (audio_we) audio_reg <= audio_in;
+end
+
+// ---- 控制寄存器：锁存 CPU 写入 ----
+reg [3:0] unison_count;
+reg [3:0] detune_shift;
+
+always @(posedge clk or posedge rst) begin
+    if (rst) begin
+        unison_count <= 4'd4;
+        detune_shift <= 4'd6;
+    end else begin
+        if (unison_we) unison_count <= unison_in[3:0];
+        if (detune_we) detune_shift <= detune_in[3:0];
     end
+end
 
-    // --- 1. PWM 载波 (缩减到 10位，提高载波频率，确保更容易驱动) ---
-    reg [9:0] pwm_cnt;
-    always @(posedge clk or posedge rst) begin
-        if(rst) pwm_cnt <= 10'd0;
-        else pwm_cnt <= pwm_cnt + 1'b1;
-    end
+// ---- PWM 载波（10位） ----
+reg [9:0] pwm_cnt;
+always @(posedge clk or posedge rst) begin
+    if (rst) pwm_cnt <= 10'd0;
+    else     pwm_cnt <= pwm_cnt + 1'b1;
+end
 
-    // --- 2. 四路微失谐振荡器 ---
-    reg [31:0] cnt0, cnt1, cnt2, cnt3;
-    reg out0, out1, out2, out3;
+// ---- 参数化振荡器阵列 ----
+// voice 0：基准频率，不失谐
+// voice i：audio_reg + (audio_reg >> (detune_shift + i - 1))
+// detune_shift 越小 → 偏移越大 → 失谐越明显
 
-    // 调整失谐量：这里用较大的偏移，确保你能听出区别
-    wire [31:0] lim0 = audio_reg;
-    wire [31:0] lim1 = audio_reg + (audio_reg >> 6); // 偏移约 1.5%
-    wire [31:0] lim2 = audio_reg - (audio_reg >> 7); // 偏移约 0.8%
-    wire [31:0] lim3 = audio_reg + (audio_reg >> 8); // 偏移约 0.4%
+wire [31:0] lim [0:MAX_VOICES-1];
+reg  [31:0] cnt [0:MAX_VOICES-1];
+reg         out [0:MAX_VOICES-1];
 
-    always @(posedge clk or posedge rst) begin
-        if(rst) begin
-            {cnt0, cnt1, cnt2, cnt3} <= 128'd0;
-            {out0, out1, out2, out3} <= 4'b0;
-        end else if(audio_reg > 0) begin
-            // 分别计数翻转
-            if(cnt0 >= (lim0 >> 1)) begin cnt0 <= 0; out0 <= ~out0; end else cnt0 <= cnt0 + 1;
-            if(cnt1 >= (lim1 >> 1)) begin cnt1 <= 0; out1 <= ~out1; end else cnt1 <= cnt1 + 1;
-            if(cnt2 >= (lim2 >> 1)) begin cnt2 <= 0; out2 <= ~out2; end else cnt2 <= cnt2 + 1;
-            if(cnt3 >= (lim3 >> 1)) begin cnt3 <= 0; out3 <= ~out3; end else cnt3 <= cnt3 + 1;
+genvar i;
+generate
+    for (i = 0; i < MAX_VOICES; i = i + 1) begin : voice_gen
+        // 失谐量计算：i=0 不偏移，i>0 按 detune_shift+i-1 右移
+        wire [3:0] shift_val = detune_shift + i - 1;
+
+        assign lim[i] = (i == 0)
+            ? audio_reg
+            : audio_reg + (audio_reg >> shift_val);
+
+        always @(posedge clk or posedge rst) begin
+            if (rst) begin
+                cnt[i] <= 32'd0;
+                out[i] <= 1'b0;
+            end else if (audio_reg > 0 && i < unison_count) begin
+                // 激活路：正常计数翻转
+                if (cnt[i] >= (lim[i] >> 1)) begin
+                    cnt[i] <= 32'd0;
+                    out[i] <= ~out[i];
+                end else begin
+                    cnt[i] <= cnt[i] + 1;
+                end
+            end else begin
+                // 未激活路：清零，不发声
+                cnt[i] <= 32'd0;
+                out[i] <= 1'b0;
+            end
         end
     end
+endgenerate
 
-    // --- 3. 混音器 ---
-    // 每个通道贡献 255 的值，4路加起来最大 1020 (小于 10'd1024)
-    wire [9:0] mix_sum = (out0 ? 10'd255 : 10'd0) + 
-                         (out1 ? 10'd255 : 10'd0) + 
-                         (out2 ? 10'd255 : 10'd0) + 
-                         (out3 ? 10'd255 : 10'd0);
+// ---- 动态混音器 ----
+// 每路振幅 = 1024 / unison_count，查找表保证总幅度恒定
+reg [9:0] per_voice_amp;
+always @(*) begin
+    case (unison_count)
+        4'd1:    per_voice_amp = 10'd1023;
+        4'd2:    per_voice_amp = 10'd511;
+        4'd3:    per_voice_amp = 10'd341;
+        4'd4:    per_voice_amp = 10'd255;
+        4'd5:    per_voice_amp = 10'd204;
+        4'd6:    per_voice_amp = 10'd170;
+        4'd7:    per_voice_amp = 10'd146;
+        4'd8:    per_voice_amp = 10'd127;
+        default: per_voice_amp = 10'd255;
+    endcase
+end
 
-    // 重点：这里改回 1'b1 和 1'b0，不再用 1'bz
-    assign AUD_PWM = (pwm_cnt < mix_sum) ? 1'b1 : 1'b0;
-
-    reg SD_out;
-    reg [31:0] counter;
-    always@(posedge clk or posedge rst)
-    begin
-        if(rst)
-        begin
-            SD_out<=1'b0;
-            counter<=32'h0;
-        end
-        else if(audio_we)
-        begin
-            SD_out<=1'b1;
-            counter<=32'h0;
-        end
-        else if(counter[25])
-            SD_out<=1'b0;
-        else
-            counter<=counter+1'b1;
+// 累加所有激活路（组合逻辑，综合为加法树）
+reg [12:0] mix_sum;
+integer j;
+always @(*) begin
+    mix_sum = 13'd0;
+    for (j = 0; j < MAX_VOICES; j = j + 1) begin
+        if (j < unison_count)
+            mix_sum = mix_sum + (out[j] ? {3'b0, per_voice_amp} : 13'd0);
     end
-    assign AUD_SD=SD_out;
+end
+
+assign AUD_PWM = (pwm_cnt < mix_sum[9:0]) ? 1'b1 : 1'b0;
+
+// ---- AUD_SD：有音频信号时使能，静默超时后关闭 ----
+reg        SD_out;
+reg [31:0] counter;
+always @(posedge clk or posedge rst) begin
+    if (rst) begin
+        SD_out  <= 1'b0;
+        counter <= 32'h0;
+    end else if (audio_we) begin
+        SD_out  <= 1'b1;
+        counter <= 32'h0;
+    end else if (counter[25]) begin
+        SD_out  <= 1'b0;
+    end else begin
+        counter <= counter + 1'b1;
+    end
+end
+assign AUD_SD = SD_out;
 
 endmodule

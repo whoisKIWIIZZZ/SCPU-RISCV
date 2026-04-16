@@ -10,7 +10,8 @@ module SCPU(
     output [31:0] Data_out,
     output [2:0]  dm_ctrl,
     output        CPU_MIO,
-    input         INT
+    input         INT,
+    output [31:0] mret
 );
 
 // =============================================================================
@@ -429,7 +430,7 @@ mux u_mux_mret(
 // 第五级：中断跳转（最高优先级，覆盖一切）
 mux u_mux_int(
     .x(pc_after_mret),
-    .y(32'h0000017c),      // 中断向量地址，ROM里这里放中断处理程序
+    .y(32'h000000e0),      // 中断向量地址，ROM里这里放中断处理程序
     .signal(int_taken),
     .z(next_PC)
 );
@@ -492,5 +493,5 @@ GRE_array #(.WIDTH(104)) MEM_WB_reg(
     .in(MEM_WB_in),
     .out(MEM_WB_out)
 );
-
+assign mret = mepc;
 endmodule
