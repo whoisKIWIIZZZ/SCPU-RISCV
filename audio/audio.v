@@ -101,8 +101,8 @@ always @(*) begin
     end
 end
 
-wire [13:0] mix_scaled = mix_sum * {1'b0, volume, 3'b0};
-wire [9:0] vca_out = mix_scaled[13:4];
+wire [22:0] mix_scaled = mix_sum * {10'b0, volume, 3'b0};
+wire [9:0] vca_out = mix_scaled[22:13];
 
 lpf filter_inst (
     .clk(clk),

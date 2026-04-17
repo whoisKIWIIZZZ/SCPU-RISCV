@@ -27,17 +27,13 @@ wire [31:0] counter_out;
     
     wire audio_we;
     wire [31:0] audio_in;
-    audio #(.MAX_VOICES(8)) EX2_audio(
+    wire [7:0] audio_addr;
+    audio_interface U_AUDIO_INTERFACE(
         .clk(clk),
         .rst(~rstn),
-        .audio_we(audio_we),
-        .audio_in(audio_in),
-        .AUD_PWM(AUD_PWM),
-        .AUD_SD(AUD_SD),
-        .detune_in(detune_out),
-        .detune_we(detune_we),
-        .unison_in(unison_out),
-        .unison_we(unison_we)
+        .reg_we(audio_we),
+        .reg_addr(audio_addr),
+        .reg_wdata(audio_in)
     );
 
 
@@ -183,10 +179,7 @@ wire [31:0] ps2_scancode;
         .vram_dout(vram_dout),
         .ps2_ready(ps2_ready),
         .ps2_key(ps2_key),
-        .detune_out(detune_out),
-        .detune_we(detune_we),
-        .unison_out(unison_out),
-        .unison_we(unison_we)
+        .audio_addr(audio_addr)
     );
 
    

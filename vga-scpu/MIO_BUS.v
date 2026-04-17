@@ -15,7 +15,8 @@
 module MIO_BUS(clk, rst, BTN, SW, PC, mem_w, Cpu_data2bus, addr_bus, 
   ram_data_out, led_out, counter_out, counter0_out, counter1_out, counter2_out, Cpu_data4bus, 
   ram_data_in, ram_addr, data_ram_we, GPIOf0000000_we, GPIOe0000000_we, counter_we, 
-  Peripheral_in,vram_we,vram_addr,vram_dout,ps2_ready,ps2_key,audio,audio_we,detune_out,detune_we,unison_out,unison_we);
+  Peripheral_in,vram_we,vram_addr,vram_dout,ps2_ready,ps2_key,audio,audio_we,audio_addr
+  );
 
   input clk;
   input rst;
@@ -41,10 +42,8 @@ module MIO_BUS(clk, rst, BTN, SW, PC, mem_w, Cpu_data2bus, addr_bus,
   output [31:0] audio;
   output audio_we;
   output [31:0]Peripheral_in;
-  output [31:0]detune_out;
-  output detune_we;
-  output [31:0]unison_out;
-  output unison_we;
+  output [7:0] audio_addr;
+
 output vram_we;
 output [9:0] vram_addr;
 
@@ -63,10 +62,7 @@ input [7:0]  ps2_key;
   assign counter_we       = (mem_w && (addr_bus[31:28] == 4'he) && (addr_bus[3:0] != 4'h0)) ? 1'b1 : 1'b0;
   assign audio=(addr_bus[31:28]==4'hb)?Cpu_data2bus[31:0]:32'h0;
   assign audio_we=(mem_w&&(addr_bus[31:28]==4'hb))?1'b1:1'b0;
-  assign detune_out=(addr_bus[31:24]==4'hd2)?Cpu_data2bus[31:0]:32'h0;
-  assign detune_we=(mem_w&&(addr_bus[31:24]==4'hd2))?1'b1:1'b0;
-  assign unison_out=(addr_bus[31:24]==4'hd1)?Cpu_data2bus[31:0]:32'h0;
-  assign unison_we=(mem_w&&(addr_bus[31:24]==4'hd1))?1'b1:1'b0;
+  assign audio_addr=(addr_bus[31:28]==4'hb)?addr_bus[7:0]:8'h0;
 
 
 assign Cpu_data4bus = 

@@ -2,22 +2,23 @@
 
 module audio_top (
     input clk,
-    input rst,
+    input rstn,
     
     input [15:0] sw_i,
     output AUD_PWM,
     output AUD_SD
 );
 
+    wire rst = ~rstn;
     wire btn_play;
     wire [1:0] sw_unison, sw_detune, sw_env_type, sw_filter;
     assign btn_play = sw_i[15];
     wire [3:0] sw_note;
-    assign [3:0] sw_note = sw_i[3:0];
-    assign [1:0] sw_unison = sw_i[5:4];
-    assign [1:0] sw_detune = sw_i[7:6];
-    assign [1:0] sw_env_type = sw_i[9:8];
-    assign [1:0] sw_filter = sw_i[11:10];
+    assign  sw_note = sw_i[3:0];
+    assign  sw_unison = sw_i[5:4];
+    assign  sw_detune = sw_i[7:6];
+    assign  sw_env_type = sw_i[9:8];
+    assign  sw_filter = sw_i[11:10];
     wire volume_up, volume_down;
     assign volume_up = sw_i[13];
     assign volume_down = sw_i[14];
@@ -146,7 +147,9 @@ module audio_top (
         .env_r(r_step),
         .filter_cutoff(filter_val),
         .volume(4'd8),
-        .mix_out(mix_out)
+        .mix_out(mix_out),
+        .unison(unison_val), // 必须连接
+        .detune(detune_val) // 必须连接
     );
 
     reg [9:0] pwm_cnt;

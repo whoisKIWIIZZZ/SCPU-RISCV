@@ -1,30 +1,24 @@
 `timescale 1ns / 1ps
+
 module VGA_top(
-    input         clk,        // 100MHz
-    input         rst,
-    // CPU写VRAM接口
+    input         clk,        // 100MHz 主时钟
+    input         rst,        // 高电平复位
     input         vram_we,
     input  [9:0]  vram_addr,
     input  [1:0]  vram_din,
-    // CPU读VRAM接口
     output [1:0]  vram_dout,
-    // VGA输出
-    output        HSYNC,
-    output        VSYNC,
+    // VGA 接口
+    output         HSYNC,
+    output         VSYNC,
     output [3:0]  R,
     output [3:0]  G,
     output [3:0]  B,
-    // 测试台可访问的信号
-    output        pixel_clk,
-    output        pixel_active,
-    output [9:0]  pixel_col,
-    output [8:0]  pixel_row,
-    output        pixel_in_board,
-    output        pixel_on_line
+    // 其他接口（保留原有的定义以便兼容）
+    output        pixel_clk
 );
 
 // =============================================================================
-// 25MHz分频
+// 1. 时钟分频 (100MHz -> 25MHz)
 // =============================================================================
 reg [1:0] clk_div;
 always @(posedge clk or posedge rst) begin
@@ -32,9 +26,10 @@ always @(posedge clk or posedge rst) begin
     else     clk_div <= clk_div + 1;
 end
 wire clk25 = clk_div[1];
+assign pixel_clk = clk25;
 
 // =============================================================================
-// VGA扫描
+// 2. VGA 扫描实例化
 // =============================================================================
 wire [8:0] row;
 wire [9:0] col;
@@ -51,137 +46,129 @@ VGA_Scan u_scan(
 );
 
 // =============================================================================
-// VRAM：19x19=361格，每格2bit
-// 00=空 01=黑子 10=白子
+// 3. 字符显示逻辑 (基于 font_ascii_8_8.coe)
 // =============================================================================
-reg [1:0] vram [0:360];
+// 设定显示区域：左上角 (16, 16) 开始
+wire [9:0] txt_local_x = col - 10'd16;
+wire [8:0] txt_local_y = row - 9'd16;
+// 每个字 8x8，我们显示 4 行，每行最多 16 个字符
+wire in_text_area = (col >= 16 && col < 144) && (row >= 16 && row < 80);
 
-integer vi;
-initial begin
-    for (vi = 0; vi <= 360; vi = vi + 1)
-        vram[vi] = 2'b00;
+wire [3:0] char_col_idx = txt_local_x[6:3]; // 横向第几个字
+wire [2:0] char_row_idx = txt_local_y[5:3]; // 纵向第几行 (0-7)
+
+reg [7:0] current_char_ascii;
+
+// 定义要显示的文字内容
+always @(*) begin
+    case (char_row_idx)
+        3'd0: begin // 第一行: UNISON: ***
+            case (char_col_idx)
+                4'h0: current_char_ascii = "U"; 4'h1: current_char_ascii = "N";
+                4'h2: current_char_ascii = "I"; 4'h3: current_char_ascii = "S";
+                4'h4: current_char_ascii = "O"; 4'h5: current_char_ascii = "N";
+                4'h6: current_char_ascii = ":"; default: current_char_ascii = "*";
+            endcase
+        end
+        3'd1: begin // 第二行: DETUNE: ***
+            case (char_col_idx)
+                4'h0: current_char_ascii = "D"; 4'h1: current_char_ascii = "E";
+                4'h2: current_char_ascii = "T"; 4'h3: current_char_ascii = "U";
+                4'h4: current_char_ascii = "N"; 4'h5: current_char_ascii = "E";
+                4'h6: current_char_ascii = ":"; default: current_char_ascii = "*";
+            endcase
+        end
+        3'd2: begin // 第三行: LOUDNESS: ***
+            case (char_col_idx)
+                4'h0: current_char_ascii = "L"; 4'h1: current_char_ascii = "O";
+                4'h2: current_char_ascii = "U"; 4'h3: current_char_ascii = "D";
+                4'h4: current_char_ascii = "N"; 4'h5: current_char_ascii = "E";
+                4'h6: current_char_ascii = "S"; 4'h7: current_char_ascii = "S";
+                4'h8: current_char_ascii = ":"; default: current_char_ascii = "*";
+            endcase
+        end
+        3'd3: begin // 第四行: WAVETABLE: ***
+            case (char_col_idx)
+                4'h0: current_char_ascii = "W"; 4'h1: current_char_ascii = "A";
+                4'h2: current_char_ascii = "V"; 4'h3: current_char_ascii = "E";
+                4'h4: current_char_ascii = "T"; 4'h5: current_char_ascii = "A";
+                4'h6: current_char_ascii = "B"; 4'h7: current_char_ascii = "L";
+                4'h8: current_char_ascii = "E"; 4'h9: current_char_ascii = ":";
+                default: current_char_ascii = "*";
+            endcase
+        end
+        default: current_char_ascii = " ";
+    endcase
 end
 
-// CPU写
-always @(posedge clk) begin
-    if (vram_we && vram_addr <= 10'd360)
-        vram[vram_addr] <= vram_din;
-end
+// 索引 ROM：(ASCII * 8) + 字符内行偏移
+wire [10:0] font_rom_addr = {current_char_ascii, txt_local_y[2:0]};
+wire [7:0]  font_row_data;
 
-// CPU读
-assign vram_dout = (vram_addr <= 10'd360) ? vram[vram_addr] : 2'b00;
+// 请在 Vivado 中创建名为 font_rom 的 IP 核并载入你的 COE
+font_rom your_font_unit (
+    .a(font_rom_addr),
+    .spo(font_row_data)
+);
 
-// =============================================================================
-// 棋盘参数
-// =============================================================================
-localparam BOARD_LEFT   = 10'd122;
-localparam BOARD_TOP    = 9'd42;
-localparam CELL         = 10'd22;
-localparam BOARD_SIZE   = 10'd396;
-localparam BOARD_RIGHT  = BOARD_LEFT + BOARD_SIZE;
-localparam BOARD_BOTTOM = BOARD_TOP  + BOARD_SIZE;
+// 根据 X 坐标的低 3 位提取具体的像素点 (注意 COE 通常是左高右低，所以用 7 - idx)
+wire pixel_on_font = in_text_area && font_row_data[3'd7 - txt_local_x[2:0]];
 
 // =============================================================================
-// 当前像素位置计算
+// 4. 和弦可视化逻辑 (Cmaj9: C4, E4, G4, B4, D5)
 // =============================================================================
-wire in_board_area = (col >= BOARD_LEFT - 10'd8) && (col <= BOARD_RIGHT  + 10'd8) &&
-                     (row >= BOARD_TOP  - 9'd8)  && (row <= BOARD_BOTTOM + 9'd8);
+localparam CHORD_X_START = 10'd50;
+localparam CHORD_X_END   = 10'd300;
+localparam BASE_Y        = 9'd300; // 设置在屏幕偏下方
+localparam NOTE_GAP      = 9'd15;
 
-wire in_grid = (col >= BOARD_LEFT) && (col <= BOARD_RIGHT) &&
-               (row >= BOARD_TOP)  && (row <= BOARD_BOTTOM);
+// 计算音符 Y 坐标
+wire [8:0] y_c4 = BASE_Y;
+wire [8:0] y_e4 = BASE_Y - NOTE_GAP * 4;
+wire [8:0] y_g4 = BASE_Y - NOTE_GAP * 7;
+wire [8:0] y_b4 = BASE_Y - NOTE_GAP * 11;
+wire [8:0] y_d5 = BASE_Y - NOTE_GAP * 14;
 
-wire [9:0] dx = col - BOARD_LEFT;
-wire [9:0] dy = row - BOARD_TOP;
+// 判定是否在横线上 (线宽 3 像素)
+function is_on_line;
+    input [8:0] curr_y;
+    input [8:0] target_y;
+    begin
+        is_on_line = (curr_y >= target_y - 1) && (curr_y <= target_y + 1);
+    end
+endfunction
 
-wire [4:0] gx = dx / CELL;
-wire [4:0] gy = dy / CELL;
-wire [4:0] rx = dx - gx * CELL;
-wire [4:0] ry = dy - gy * CELL;
-
-wire on_hline = in_grid && (ry == 5'd0);
-wire on_vline = in_grid && (rx == 5'd0);
-wire on_line  = on_hline || on_vline;
-
-// =============================================================================
-// 最近交叉点计算（修正版）
-// =============================================================================
-wire [4:0] dist_cx = rx;
-wire [4:0] dist_nx = CELL[4:0] - rx;
-wire [4:0] dist_cy = ry;
-wire [4:0] dist_ny = CELL[4:0] - ry;
-
-wire [4:0] near_gx = (dist_cx <= dist_nx) ? gx : gx + 5'd1;
-wire [4:0] near_gy = (dist_cy <= dist_ny) ? gy : gy + 5'd1;
-wire [4:0] dist_x  = (dist_cx <= dist_nx) ? dist_cx : dist_nx;
-wire [4:0] dist_y  = (dist_cy <= dist_ny) ? dist_cy : dist_ny;
+wire in_chord_x = (col >= CHORD_X_START && col <= CHORD_X_END);
+wire on_chord = in_chord_x && (
+                is_on_line(row, y_c4) || is_on_line(row, y_e4) || 
+                is_on_line(row, y_g4) || is_on_line(row, y_b4) || 
+                is_on_line(row, y_d5));
 
 // =============================================================================
-// 星位
+// 5. 最终颜色混合
 // =============================================================================
-wire star_col = (near_gx==5'd3)||(near_gx==5'd9)||(near_gx==5'd15);
-wire star_row = (near_gy==5'd3)||(near_gy==5'd9)||(near_gy==5'd15);
-wire on_star  = in_grid && star_col && star_row &&
-                (dist_x<=5'd2) && (dist_y<=5'd2);
-
-// =============================================================================
-// VRAM查询：当前像素对应格子的棋子状态
-// =============================================================================
-wire [9:0] stone_idx = {5'b0, near_gy} * 10'd19 + {5'b0, near_gx};
-wire [1:0] stone_val = (in_grid && stone_idx <= 10'd360) ?
-                        vram[stone_idx] : 2'b00;
-
-wire pixel_has_stone  = (stone_val != 2'b00);
-wire pixel_is_black   = (stone_val == 2'b01);
-wire pixel_is_white   = (stone_val == 2'b10);
-
-// 棋子圆形范围：八边形近似
-wire in_stone = in_grid && pixel_has_stone &&
-                (dist_x <= 5'd7) && (dist_y <= 5'd7) &&
-                (dist_x + dist_y <= 5'd10);
-
-// =============================================================================
-// 像素颜色输出
-// =============================================================================
-reg [3:0] r_reg, g_reg, b_reg;
+reg [3:0] r_out, g_out, b_out;
 
 always @(*) begin
     if (!active) begin
-        r_reg = 4'h0; g_reg = 4'h0; b_reg = 4'h0;
+        r_out = 4'h0; g_out = 4'h0; b_out = 4'h0;
     end
-    else if (in_stone) begin
-        if (pixel_is_black) begin
-            // 黑子
-            r_reg = 4'h0; g_reg = 4'h0; b_reg = 4'h0;
-        end else begin
-            // 白子：浅灰
-            r_reg = 4'hD; g_reg = 4'hD; b_reg = 4'hD;
-        end
+    else if (pixel_on_font) begin
+        // 参数文字颜色：黑色
+        r_out = 4'h0; g_out = 4'h0; b_out = 4'h0;
     end
-    else if (on_star) begin
-        r_reg = 4'h0; g_reg = 4'h0; b_reg = 4'h0;
-    end
-    else if (on_line) begin
-        r_reg = 4'h0; g_reg = 4'h0; b_reg = 4'h0;
-    end
-    else if (in_board_area) begin
-        // 棋盘木质背景：土黄
-        r_reg = 4'hE; g_reg = 4'hB; b_reg = 4'h5;
+    else if (on_chord) begin
+        // 和弦线段颜色：黑色
+        r_out = 4'h0; g_out = 4'h0; b_out = 4'h0;
     end
     else begin
-        // 屏幕背景：深灰
-        r_reg = 4'h3; g_reg = 4'h3; b_reg = 4'h3;
+        // 背景颜色：中灰色
+        r_out = 4'h8; g_out = 4'h8; b_out = 4'h8;
     end
 end
 
-assign R = r_reg;
-assign G = g_reg;
-assign B = b_reg;
-
-assign pixel_clk       = clk25;
-assign pixel_active    = active;
-assign pixel_col       = col;
-assign pixel_row       = row;
-assign pixel_in_board  = in_board_area;
-assign pixel_on_line   = on_line;
+assign R = r_out;
+assign G = g_out;
+assign B = b_out;
 
 endmodule
