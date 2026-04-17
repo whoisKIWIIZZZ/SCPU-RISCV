@@ -1,7 +1,8 @@
 `timescale 1ns / 1ps
 
 module audio #(
-    parameter MAX_SLOTS = 8
+    parameter MAX_SLOTS = 8,
+    parameter MAX_VOICES = 8
 )(
     input clk,
     input rst,
@@ -15,9 +16,9 @@ module audio #(
     input [15:0] env_r,
 
     input [4:0] filter_cutoff,
-
-    input volume_up,
-    input volume_down,
+    input [3:0] volume,
+    input [3:0] unison,
+    input [3:0] detune,
 
     output [9:0] mix_out
 );
@@ -35,21 +36,35 @@ wire [9:0] slot_outs [0:MAX_SLOTS-1];
 genvar i;
 generate
     for (i = 0; i < MAX_SLOTS; i = i + 1) begin : slot_gen
-        wire sq_wave;
-        wire [7:0] env_out;
+        wire [9:0] voice_out;
+        reg [9:0] voice_sum;
         
-        reg [31:0] phase_acc;
-        always @(posedge clk or posedge rst) begin
-            if (rst) begin
-                phase_acc <= 32'd0;
-            end else if (slot_gates[i]) begin
-                phase_acc <= phase_acc + slot_freq[i];
-            end else begin
-                phase_acc <= 32'd0;
+        wire [3:0] voice_count = slot_gates[i] ? unison : 4'd0;
+        
+        reg [31:0] phase_acc [0:MAX_VOICES-1];
+        reg [31:0] step_size [0:MAX_VOICES-1];
+        genvar v;
+        for (v = 0; v < MAX_VOICES; v = v + 1) begin : voice_gen
+            wire [3:0] shift_val = detune + v;
+            always @(*) begin
+                step_size[v] = (v == 0) ? slot_freq[i] : slot_freq[i] + (slot_freq[i] >> shift_val);
+            end
+            always @(posedge clk or posedge rst) begin
+                if (rst) begin
+                    phase_acc[v] <= 32'd0;
+                end else if (slot_gates[i]) begin
+                    if (v < voice_count) begin
+                        phase_acc[v] <= phase_acc[v] + step_size[v];
+                    end else begin
+                        phase_acc[v] <= 32'd0;
+                    end
+                end else begin
+                    phase_acc[v] <= 32'd0;
+                end
             end
         end
-        assign sq_wave = phase_acc[31];
         
+        wire [7:0] env_out;
         adsr env_gen (
             .clk(clk),
             .rst(rst),
@@ -61,20 +76,21 @@ generate
             .env_out(env_out)
         );
         
-        wire [16:0] prod = {sq_wave, 9'd0} * {9'd0, env_out};
-        assign slot_outs[i] = prod[15:6];
+        integer k;
+        always @(*) begin
+            voice_sum = 10'd0;
+            for (k = 0; k < MAX_VOICES; k = k + 1) begin
+                if (k < voice_count) begin
+                    voice_sum = voice_sum + (phase_acc[k][31] ? 10'd1 : 10'd0);
+                end
+            end
+        end
+        
+        wire [16:0] prod = {voice_sum, 6'd0} * {9'd0, env_out};
+        assign voice_out = prod[15:6];
+        assign slot_outs[i] = voice_out;
     end
 endgenerate
-
-reg [3:0] volume_level;
-always @(posedge clk or posedge rst) begin
-    if (rst) begin
-        volume_level <= 4'd3;
-    end else begin
-        if (volume_up) volume_level <= (volume_level < 4'd15) ? volume_level + 1 : volume_level;
-        if (volume_down) volume_level <= (volume_level > 4'd0) ? volume_level - 1 : volume_level;
-    end
-end
 
 reg [13:0] mix_sum;
 integer j;
@@ -85,7 +101,7 @@ always @(*) begin
     end
 end
 
-wire [13:0] mix_scaled = mix_sum * {1'b0, volume_level, 3'b0};
+wire [13:0] mix_scaled = mix_sum * {1'b0, volume, 3'b0};
 wire [9:0] vca_out = mix_scaled[13:4];
 
 lpf filter_inst (

@@ -133,7 +133,8 @@ module audio_top (
     wire [9:0] mix_out;
 
     audio #(
-        .MAX_SLOTS(8)
+        .MAX_SLOTS(8),
+        .MAX_VOICES(8)
     ) synth_core (
         .clk(clk),
         .rst(rst),
@@ -144,8 +145,7 @@ module audio_top (
         .env_s(s_lvl),
         .env_r(r_step),
         .filter_cutoff(filter_val),
-        .volume_up(volume_up),
-        .volume_down(volume_down),
+        .volume(4'd8),
         .mix_out(mix_out)
     );
 
