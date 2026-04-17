@@ -62,7 +62,7 @@ input [7:0]  ps2_key;
   assign counter_we       = (mem_w && (addr_bus[31:28] == 4'he) && (addr_bus[3:0] != 4'h0)) ? 1'b1 : 1'b0;
   assign audio=(addr_bus[31:28]==4'hb)?Cpu_data2bus[31:0]:32'h0;
   assign audio_we=(mem_w&&(addr_bus[31:28]==4'hb))?1'b1:1'b0;
-  assign audio_addr=(addr_bus[31:28]==4'hb)?addr_bus[7:0]:8'h0;
+  assign audio_addr=(addr_bus[31:28]==4'hb)?addr_bus[9:2]:8'h0;
 
 
 assign Cpu_data4bus = 

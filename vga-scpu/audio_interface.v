@@ -78,7 +78,7 @@ module audio_interface (
             reg_file[ADDR_ENV_R] <= 16'd100;
             reg_file[ADDR_FILTER] <= 5'd4;
             reg_file[ADDR_VOLUME][3:0] <= 4'd8;
-            reg_file[ADDR_UNISON][3:0] <= 4'd1;
+            reg_file[ADDR_UNISON][3:0] <= 4'd4;
             reg_file[ADDR_DETUNE][3:0] <= 4'd7;
         end else if (reg_we) begin
             case (reg_addr)
