@@ -15,7 +15,7 @@
 module MIO_BUS(clk, rst, BTN, SW, PC, mem_w, Cpu_data2bus, addr_bus, 
   ram_data_out, led_out, counter_out, counter0_out, counter1_out, counter2_out, Cpu_data4bus, 
   ram_data_in, ram_addr, data_ram_we, GPIOf0000000_we, GPIOe0000000_we, counter_we, 
-  Peripheral_in,vram_we,vram_addr,vram_dout,ps2_ready,ps2_key,audio,audio_we,audio_addr
+  Peripheral_in,vram_we,vram_addr,vram_dout,ps2_ready,ps2_key,audio,audio_we,audio_addr,
   );
 
   input clk;
@@ -43,6 +43,7 @@ module MIO_BUS(clk, rst, BTN, SW, PC, mem_w, Cpu_data2bus, addr_bus,
   output audio_we;
   output [31:0]Peripheral_in;
   output [7:0] audio_addr;
+  output ps2_ready;
 
 output vram_we;
 output [9:0] vram_addr;
@@ -52,18 +53,17 @@ assign vram_we   = (mem_w && (addr_bus[31:28] == 4'hC)) ? 1'b1 : 1'b0;
 assign vram_addr = addr_bus[11:2];
 
 input [1:0] vram_dout;
-input        ps2_ready;
 input [7:0]  ps2_key;
 
   //0x0:RAM;0xE:Counter;0xF:IO
  assign data_ram_we     = (mem_w && (addr_bus[31:28] == 4'h0)) ? 1'b1 : 1'b0;
-  assign GPIOf0000000_we  = (mem_w && (addr_bus[31:28] == 4'hf)) ? 1'b1 : 1'b0;//led
+  assign GPIOf0000000_we  = ((mem_w && (addr_bus[31:28] == 4'hf)&& addr_bus[3:0] != 4'h8)) ? 1'b1 : 1'b0;//led
   assign GPIOe0000000_we  = (mem_w && (addr_bus[31:28] == 4'he) && (addr_bus[3:0] == 4'h0)) ? 1'b1 : 1'b0;
   assign counter_we       = (mem_w && (addr_bus[31:28] == 4'he) && (addr_bus[3:0] != 4'h0)) ? 1'b1 : 1'b0;
   assign audio=(addr_bus[31:28]==4'hb)?Cpu_data2bus[31:0]:32'h0;
   assign audio_we=(mem_w&&(addr_bus[31:28]==4'hb))?1'b1:1'b0;
   assign audio_addr=(addr_bus[31:28]==4'hb)?addr_bus[9:2]:8'h0;
-
+  assign  ps2_ready = (addr_bus[31:28] == 4'hf && addr_bus[3:0] == 4'h8) ? 1'b1 : 1'b0;
 
 assign Cpu_data4bus = 
     (addr_bus[31:28]==4'h0) ? ram_data_out :

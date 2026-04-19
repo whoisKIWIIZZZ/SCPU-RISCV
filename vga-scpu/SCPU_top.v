@@ -177,7 +177,7 @@ wire [31:0] ps2_scancode;
         .vram_we  (vram_we),
         .vram_addr(vram_addr),
         .vram_dout(vram_dout),
-        .ps2_ready(ps2_ready),
+        .ps2_ready(ps2_rd),
         .ps2_key(ps2_key),
         .audio_addr(audio_addr)
     );
@@ -201,7 +201,7 @@ wire [31:0] ps2_scancode;
         .data2(ROM_output),
         .data3(counter_out),
         .data4(Addr_out),
-        .data5(Data_out),
+        .data5(ps2_ready),
         .data6(Cpu_data4bus),
         .data7(PC_out),
         .point_in({32'b0,clkdiv}),
@@ -244,9 +244,6 @@ wire [31:0] ps2_scancode;
     );
 
 
-// ps2_rd：CPU读PS2数据时拉高
-// 地址0xF0000008时触发读
-assign ps2_rd = (Addr_out == 32'hF0000008) && !mem_w;
 
 // 实例化PS2IO
 PS2IO U_PS2(

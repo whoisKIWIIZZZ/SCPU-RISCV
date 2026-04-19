@@ -34,7 +34,7 @@ module PS2IO(input io_read_clk,
 reg[1:0] get_RD;
 wire rdn;	
 wire [7:0]ps2_key;
-//wire PS2Ready;
+wire PS2Ready;
 	assign testkey = ps2_key;
 	
 	always @(posedge clk or posedge rst)
@@ -50,7 +50,8 @@ wire [7:0]ps2_key;
 //					  rdn <= 0;			//RD | ~PS2Ready;							//cancel key_ready
 			  end else Scancode <= Scancode;
 
-	assign key =(RD && PS2Ready)? ps2_key : 8'haa;		// Scancode[7:0] ; 
+	assign key =ps2_key;		//(RD && PS2Ready)? ps2_key : 8'haa;		// Scancode[7:0] ;
+	//assign key =(RD && PS2Ready)? ps2_key : 8'haa;		// Scancode[7:0] ; 
 
 //	ps2_kbd
 	PS2KB			 ps2_kbd(.clk(clk),

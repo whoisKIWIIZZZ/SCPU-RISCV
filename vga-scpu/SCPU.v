@@ -430,7 +430,7 @@ mux u_mux_mret(
 // 第五级：中断跳转（最高优先级，覆盖一切）
 mux u_mux_int(
     .x(pc_after_mret),
-    .y(32'h000000e0),      // 中断向量地址，ROM里这里放中断处理程序
+    .y(32'h0000001c),      // 中断向量地址，ROM里这里放中断处理程序
     .signal(int_taken),
     .z(next_PC)
 );

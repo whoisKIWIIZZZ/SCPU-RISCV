@@ -36,11 +36,7 @@ end
 	always @ (posedge clk) begin 					  		// this is a common method to
         Fall_Clk <= {Fall_Clk[0],PS2C};    			// detect
 	end                                               // falling-edge
-	// 	always @(Fall_Clk) begin
-	// 	if (Fall_Clk == 2'b10) $display("Detected Falling Edge at %0t", $time);
-	// 	$display("ttt %0t", $time);
-	// end
-
+	
 	always @ (posedge clk) begin
 		if(rst)begin
 		  PS2_shift <= 10'b1000000000;						//��λ�Ĵ�����ʼ��
@@ -61,7 +57,6 @@ end
 			Rece: begin
 				if(Fall_Clk == 2'b10)begin							//ʱ���½��أ�����PS2D
 			  	  if(PS2_shift[0] && PS2D)begin 			//���յ�ֹͣλ
-				  //$display("Received Shift Reg: %b", PS2_shift); // 看看这串二进制对不对
 					ready <= {^ PS2_shift [9:1]}; 				//odd prity��Ч��������Ч
 					data <= PS2_shift [8:1];						//ɨ���������ݻ�����
 					state	 <= Idle;				  					//����һ֡���ݽ���
