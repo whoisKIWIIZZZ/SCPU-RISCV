@@ -103,7 +103,7 @@ module audio_interface (
                 ADDR_ENV_S:   reg_file[ADDR_ENV_S][15:0] <= reg_wdata[15:0];
                 ADDR_ENV_R:   reg_file[ADDR_ENV_R][15:0] <= reg_wdata[15:0];
                 ADDR_FILTER:  reg_file[ADDR_FILTER][4:0] <= reg_wdata[4:0];
-                ADDR_VOLUME:  reg_file[ADDR_VOLUME][3:0] <= reg_wdata[3:0];
+                //ADDR_VOLUME:  reg_file[ADDR_VOLUME][3:0] <= reg_wdata[3:0];
                 ADDR_UNISON:  reg_file[ADDR_UNISON][3:0] <= reg_wdata[3:0];
                 ADDR_DETUNE: reg_file[ADDR_DETUNE][3:0] <= reg_wdata[3:0];
             endcase

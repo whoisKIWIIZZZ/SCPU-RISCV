@@ -85,7 +85,12 @@ generate
                 end
             end
         end
-        
+        if (i == 0) begin
+            always @(posedge clk) begin
+                if (slot_gates[i])
+                    $display("Time: %t | Slot 0 Env: %d | Sum: %d", $time, env_out, voice_sum);
+            end
+        end
         wire [16:0] prod = {voice_sum, 6'd0} * {9'd0, env_out};
         assign voice_out = prod[15:6];
         assign slot_outs[i] = voice_out;

@@ -40,6 +40,6 @@ module lpf (
     end
     
     // 截取整数部分输出，并防止负数下溢
-    assign audio_out = (y_prev[26]) ? 10'd0 : y_prev[25:16];
+    assign audio_out =  y_prev[25:16];
 
 endmodule

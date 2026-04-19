@@ -57,7 +57,7 @@ input [7:0]  ps2_key;
 
   //0x0:RAM;0xE:Counter;0xF:IO
  assign data_ram_we     = (mem_w && (addr_bus[31:28] == 4'h0)) ? 1'b1 : 1'b0;
-  assign GPIOf0000000_we  = (mem_w && (addr_bus[31:28] == 4'hf)) ? 1'b1 : 1'b0;
+  assign GPIOf0000000_we  = (mem_w && (addr_bus[31:28] == 4'hf)) ? 1'b1 : 1'b0;//led
   assign GPIOe0000000_we  = (mem_w && (addr_bus[31:28] == 4'he) && (addr_bus[3:0] == 4'h0)) ? 1'b1 : 1'b0;
   assign counter_we       = (mem_w && (addr_bus[31:28] == 4'he) && (addr_bus[3:0] != 4'h0)) ? 1'b1 : 1'b0;
   assign audio=(addr_bus[31:28]==4'hb)?Cpu_data2bus[31:0]:32'h0;
