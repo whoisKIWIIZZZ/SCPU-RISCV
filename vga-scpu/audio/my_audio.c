@@ -73,7 +73,7 @@ __attribute__((interrupt)) void handler()
     }
     f0_pending = 0;
 
-    update_keys(key_state);
+    update_keys(keys_state);
 }
 __attribute__((noinline))void wait(int cycles){while(cycles--);}
 /**
