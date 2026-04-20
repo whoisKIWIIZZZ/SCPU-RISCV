@@ -1,6 +1,7 @@
 #pragma GCC push_options
 #pragma GCC optimize ("O0")
 #include<stdlib.h>
+#include<stdint.h>
 void main();
 void Entry()
 {
@@ -16,6 +17,8 @@ void Entry()
 #define VGA_ADDR            0xC0000000
 #define DISPLAY_BASE        0x000000A0
 #define f0_pending          (*(volatile uint8_t *)0x00000080)
+#define MAP_ADDR            0x00000084
+#define SCAN_MAP_IN_MEM     ((volatile int*)0x00000084)
 enum {
     NOTE_C4  = 0,   // bit0
     NOTE_CS4 = 1,   // bit1  C#4
@@ -32,15 +35,12 @@ enum {
     NOTE_C5  = 12,
     NOTE_CS5 = 13   // bit13 C#5
 };
-static const unsigned char SCAN_MAP[14] = {
-    0x1A, 0x22, 0x21, 0x2A, 0x32, 0x31, 0x3A, 
-    0x1C, 0x1B, 0x23, 0x2B, 0x34, 0x33, 0x3B
-};
 // --- libraries ---
 void wait(int cycles);
 void write(int addr,int data);
 void read(int addr,int *data);
 int transform(int data);
+void update_keys(uint16_t keys_mask);
 __attribute__((interrupt)) void handler()
 {
     uint16_t keys_state = *(uint16_t*)DISPLAY_BASE;
@@ -56,7 +56,7 @@ __attribute__((interrupt)) void handler()
 
     int bit_idx = -1;
     for (int i = 0; i < 14; i++) {
-        if (key == SCAN_MAP[i]) {
+        if (key == (unsigned char)SCAN_MAP_IN_MEM[i]){
             bit_idx = i;
             break;
         }
@@ -74,6 +74,11 @@ __attribute__((interrupt)) void handler()
     f0_pending = 0;
 
     update_keys(keys_state);
+}
+void write(int addr,int data)
+{
+    int *p=(int *)addr;
+    *p=data;
 }
 __attribute__((noinline))void wait(int cycles){while(cycles--);}
 /**
@@ -108,82 +113,16 @@ uint8_t read_keys_low2(void) {
     volatile uint32_t val = *(volatile uint32_t*)VGA_ADDR;
     return (uint8_t)(val & 0x3);  // MIO_BUS返回{30'b0, vram_dout}
 }
-void write(int addr,int data)
-{
-    int *p=(int *)addr;
-    *p=data;
-}
-void read(int addr,int *data)
-{
-    int *p=(int *)addr;
-    *data=*p;
-}
-// --- the driver of PIANO ---
-#define FRAME_POINTER 0x00000008
-#define FRAME_ADDR 0x00000010 // 16*4 bytes for 16 frames, 0x10~0x4f
-#define MAPPING_ADDR 0x00000100 // 64*4 bytes for 21 keys, 0x100~0x1ff
-int transform(int data)
-{
-    unsigned int ret=0;
-    if(data==0xf0)
-        return 0x0d000721;
-    read(MAPPING_ADDR+(data<<2),&ret);
-    return ret;
-}
-void displayAC()
-{
-    unsigned int temp,low,high,p;
-    read(FRAME_POINTER,&p);
-    read(FRAME_ADDR+(p<<2),&temp);
-    write(DISPLAY_ADDR,temp);
-    low=temp&0xff;
-    high=(temp>>8)&0xffffff;
-    temp=(low<<24)|high;
-    write(FRAME_ADDR+(p<<2),temp);
-    write(FRAME_POINTER,(p+1)&0xf);
-    wait(500000);
-}
-void initialize()
-{
-    // initialize the display frame
-    unsigned int frame[16];
-    frame[ 0]=0xFFFFFFFF;
-    frame[ 1]=0xFFFFEFFF;
-    frame[ 2]=0xFFFFCFFF;
-    frame[ 3]=0xFFFFCEFF;
-    frame[ 4]=0xFFFFCCFF;
-    frame[ 5]=0xFFFF8CFF;
-    frame[ 6]=0xFFFF88FF;
-    frame[ 7]=0xFFFF88FE;
-    frame[ 8]=0xFFFF88DE;
-    frame[ 9]=0xFFFF88CE;
-    frame[10]=0xFFFF88C6;
-    frame[11]=0xFFFFFFFF;
-    frame[12]=0xFFFF88C6;
-    frame[13]=0xFFFFFFFF;
-    frame[14]=0xFFFF88C6;
-    frame[15]=0x7f7f7f7f;
-    for(int i=0;i<16;++i)
-        write(FRAME_ADDR+(i<<2),frame[i]);
-    // initialize the mapping table from the key to the audio frequency
-    // C3~B3
-    // initialize the display control variable
-    write(FRAME_POINTER,0);
-    // clear the display
-    write(DISPLAY_ADDR,-1);
-}
 void main()
 {
-    unsigned int temp=0;
-    initialize();
+    unsigned char SCAN_MAP[14] = {
+    0x1A, 0x22, 0x21, 0x2A, 0x32, 0x31, 0x3A, 
+    0x1C, 0x1B, 0x23, 0x2B, 0x34, 0x33, 0x3B
+};
+    for(int i=0;i<14;i++){
+        write(MAP_ADDR + (i << 2), (int)SCAN_MAP[i]);
+    }
     begin:
-    // update_keys((1<<NOTE_C4) | (1<<NOTE_E4) | (1<<NOTE_G4));
-    // wait(5000000);
-    // update_keys(0);
-    // wait(5000000);
-    // update_keys((1<<NOTE_CS4) | (1<<NOTE_F4) | (1<<NOTE_GS4));
-    //displayAC();
-
     goto begin;
 }
 #pragma GCC pop_options

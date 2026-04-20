@@ -177,8 +177,8 @@ immgen u_immgen(.instruction(IF_ID_instruction), .imm(imm));
 
 // 预测器实例化
 
-assign is_predict_taken = 1'b0;
-// assign is_predict_taken = Branch & ID_branch_taken;
+
+assign is_predict_taken = Branch & ID_branch_taken;
 
 // =============================================================================
 // ID/EX 流水线寄存器
