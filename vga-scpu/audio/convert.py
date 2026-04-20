@@ -38,4 +38,4 @@ def coe_to_verilog(coe_filename, v_filename):
         print("错误：找不到指定的 .coe 文件。")
 
 # 执行转换
-coe_to_verilog('ok1.coe', r'.\CPU-RISCv\SCPU-RISCV\vga-scpu\ROM.v')
+coe_to_verilog('./audio/ysz.coe', './ROM.v')

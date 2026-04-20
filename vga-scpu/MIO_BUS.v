@@ -46,11 +46,11 @@ module MIO_BUS(clk, rst, BTN, SW, PC, mem_w, Cpu_data2bus, addr_bus,
   output ps2_ready;
 
 output vram_we;
-output [9:0] vram_addr;
+output [31:0] vram_addr;
 
 // 新增assign
 assign vram_we   = (mem_w && (addr_bus[31:28] == 4'hC)) ? 1'b1 : 1'b0;
-assign vram_addr = addr_bus[11:2];
+assign vram_addr = (addr_bus[31:28]==4'hC)?{18'b0, Cpu_data2bus[13:0]}:32'h0;
 
 input [1:0] vram_dout;
 input [7:0]  ps2_key;

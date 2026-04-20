@@ -280,7 +280,7 @@ wire EX_MEM_MemWrite;
 wire [2:0]  EX_MEM_dm_ctrl;
 wire [31:0] EX_MEM_alu_res, EX_MEM_rd2_stored, EX_MEM_pc_plus_4;
 wire [4:0]  EX_MEM_rd;
-
+wire is_mret_EX_MEM;
 assign {is_mret_EX_MEM,EX_MEM_RegWrite, EX_MEM_MemtoReg, EX_MEM_RegDst,
         EX_MEM_MemWrite, EX_MEM_dm_ctrl,
         EX_MEM_alu_res, EX_MEM_rd2_stored, EX_MEM_pc_plus_4,
@@ -293,7 +293,7 @@ wire [103:0] MEM_WB_in, MEM_WB_out;
 
 wire MEM_WB_MemtoReg, MEM_WB_RegDst;
 wire [31:0] MEM_WB_Data_in, MEM_WB_alu_res, MEM_WB_pc_plus_4;
-wire is_mret_EX_MEM;
+
 assign {MEM_WB_RegWrite, MEM_WB_MemtoReg, MEM_WB_RegDst,
         MEM_WB_Data_in, MEM_WB_alu_res, MEM_WB_pc_plus_4,
         MEM_WB_rd} = MEM_WB_out;

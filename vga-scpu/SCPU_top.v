@@ -144,7 +144,7 @@ wire [31:0] ps2_scancode;
         .douta(douta)
     );
     wire        vram_we;
-    wire [9:0]  vram_addr;
+    wire [31:0]  vram_addr;
     wire [1:0]  vram_dout;
     wire [31:0] detune_out,unison_out;
     wire        detune_we,unison_we;
@@ -233,7 +233,7 @@ wire [31:0] ps2_scancode;
         .clk      (clk),           // 100MHz直接给VGA，内部自己分频
         .rst      (~rstn),
         .vram_we  (vram_we),
-        .vram_addr(vram_addr),
+        .vram_addr(vram_addr[13:0]),
         .vram_din (Data_out[1:0]),
         .vram_dout(vram_dout),
         .HSYNC    (VGA_HSYNC),

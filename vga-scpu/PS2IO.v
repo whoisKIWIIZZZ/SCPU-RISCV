@@ -34,7 +34,7 @@ module PS2IO(input io_read_clk,
 reg[1:0] get_RD;
 wire rdn;	
 wire [7:0]ps2_key;
-wire PS2Ready;
+//wire PS2Ready;
 	assign testkey = ps2_key;
 	
 	always @(posedge clk or posedge rst)
