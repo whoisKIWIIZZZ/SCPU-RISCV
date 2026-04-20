@@ -50,12 +50,14 @@ wire [31:0] IF_ID_instruction, IF_ID_PC;
 reg  [31:0] PC;
 wire [31:0] next_PC;
 wire        pc_stall;
+wire        is_mret_EX; 
 
 // mret指令编码固定为32'h30200073
 assign is_mret = (IF_ID_instruction == 32'h30200073);
+// assign is_mret_EX = (EX_instruction == 32'h30200073);
 
 // 中断接受条件：有中断请求 & 中断使能 & 流水线没有stall
-assign int_taken = int_req & ie & !pc_stall;
+assign int_taken = int_req & ie & !pc_stall ;
 
 // 中断请求锁存：INT上升沿锁存，int_taken时清除
 always @(posedge clk or posedge reset) begin
@@ -175,8 +177,8 @@ immgen u_immgen(.instruction(IF_ID_instruction), .imm(imm));
 
 // 预测器实例化
 
-
-assign is_predict_taken = Branch & ID_branch_taken;
+assign is_predict_taken = 1'b0;
+// assign is_predict_taken = Branch & ID_branch_taken;
 
 // =============================================================================
 // ID/EX 流水线寄存器
@@ -213,7 +215,8 @@ assign flush_ID_EX  = (is_jump | mispredicted | int_taken) & !pc_stall;
 assign is_jal       = Branch & RegDst;
 assign id_ex_bubble = pc_stall;
 
-assign ID_EX_in = id_ex_bubble ? 165'b0 : {
+assign ID_EX_in = id_ex_bubble ? 166'b0 : {
+    is_mret,
     is_predict_taken,
     is_jal, Jump, Branch, RegWrite, ALUsrc, MemWrite, MemRead,
     MemtoReg, RegDst,
@@ -224,7 +227,7 @@ assign ID_EX_in = id_ex_bubble ? 165'b0 : {
     rd1, rd2, imm, IF_ID_PC
 };
 
-GRE_array #(.WIDTH(165)) ID_EX(
+GRE_array #(.WIDTH(166)) ID_EX(
     .clk(clk),
     .rst(reset),
     .write_enable(1'b1),
@@ -243,6 +246,7 @@ wire [2:0]  ID_EX_funct3;
 wire [4:0]  ID_EX_rs1, ID_EX_rs2, ID_EX_rd;
 wire [31:0] ID_EX_rd1, ID_EX_rd2, ID_EX_imm, ID_EX_PC;
 
+wire  is_mret_ID_EX       = ID_EX_out[165];
 assign ID_EX_predict      = ID_EX_out[164];
 assign ID_EX_is_jal       = ID_EX_out[163];
 assign ID_EX_Jump         = ID_EX_out[162];
@@ -277,7 +281,7 @@ wire [2:0]  EX_MEM_dm_ctrl;
 wire [31:0] EX_MEM_alu_res, EX_MEM_rd2_stored, EX_MEM_pc_plus_4;
 wire [4:0]  EX_MEM_rd;
 
-assign {EX_MEM_RegWrite, EX_MEM_MemtoReg, EX_MEM_RegDst,
+assign {is_mret_EX_MEM,EX_MEM_RegWrite, EX_MEM_MemtoReg, EX_MEM_RegDst,
         EX_MEM_MemWrite, EX_MEM_dm_ctrl,
         EX_MEM_alu_res, EX_MEM_rd2_stored, EX_MEM_pc_plus_4,
         EX_MEM_rd} = EX_MEM_out;
@@ -289,7 +293,7 @@ wire [103:0] MEM_WB_in, MEM_WB_out;
 
 wire MEM_WB_MemtoReg, MEM_WB_RegDst;
 wire [31:0] MEM_WB_Data_in, MEM_WB_alu_res, MEM_WB_pc_plus_4;
-
+wire is_mret_EX_MEM;
 assign {MEM_WB_RegWrite, MEM_WB_MemtoReg, MEM_WB_RegDst,
         MEM_WB_Data_in, MEM_WB_alu_res, MEM_WB_pc_plus_4,
         MEM_WB_rd} = MEM_WB_out;
@@ -439,6 +443,7 @@ mux u_mux_int(
 // EX/MEM 流水线寄存器
 // =============================================================================
 assign EX_MEM_in = {
+    is_mret_ID_EX,
     ID_EX_RegWrite, ID_EX_MemtoReg, ID_EX_RegDst,
     ID_EX_MemWrite, ID_EX_dm_ctrl,
     alu_res,
@@ -447,7 +452,7 @@ assign EX_MEM_in = {
     ID_EX_rd
 };
 
-GRE_array #(.WIDTH(108)) EX_MEM_reg(
+GRE_array #(.WIDTH(109)) EX_MEM_reg(
     .clk(clk),
     .rst(reset),
     .write_enable(1'b1),

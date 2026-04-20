@@ -57,19 +57,19 @@ input [7:0]  ps2_key;
 
   //0x0:RAM;0xE:Counter;0xF:IO
  assign data_ram_we     = (mem_w && (addr_bus[31:28] == 4'h0)) ? 1'b1 : 1'b0;
-  assign GPIOf0000000_we  = ((mem_w && (addr_bus[31:28] == 4'hf)&& addr_bus[3:0] != 4'h8)) ? 1'b1 : 1'b0;//led
+  assign GPIOf0000000_we  = (mem_w && (addr_bus[31:28] == 4'hf)) ? 1'b1 : 1'b0;//led
   assign GPIOe0000000_we  = (mem_w && (addr_bus[31:28] == 4'he) && (addr_bus[3:0] == 4'h0)) ? 1'b1 : 1'b0;
   assign counter_we       = (mem_w && (addr_bus[31:28] == 4'he) && (addr_bus[3:0] != 4'h0)) ? 1'b1 : 1'b0;
   assign audio=(addr_bus[31:28]==4'hb)?Cpu_data2bus[31:0]:32'h0;
   assign audio_we=(mem_w&&(addr_bus[31:28]==4'hb))?1'b1:1'b0;
   assign audio_addr=(addr_bus[31:28]==4'hb)?addr_bus[9:2]:8'h0;
-  assign  ps2_ready = (addr_bus[31:28] == 4'hf && addr_bus[3:0] == 4'h8) ? 1'b1 : 1'b0;
+  assign  ps2_ready = (addr_bus[31:28] == 4'hA) ? 1'b1 : 1'b0;
 
 assign Cpu_data4bus = 
     (addr_bus[31:28]==4'h0) ? ram_data_out :
     (addr_bus[31:28]==4'hf && addr_bus[3:0]==4'h0) ? {11'b0,BTN,SW} :
     (addr_bus[31:28]==4'hf && addr_bus[3:0]==4'h4) ? counter_out :
-    (addr_bus[31:28]==4'hf && addr_bus[3:0]==4'h8) ? {24'b0,ps2_key} :  // 新增
+    (addr_bus[31:28]==4'hA) ? {24'h060519,ps2_key} :  // 新增
     (addr_bus[31:28]==4'hC) ? {30'b0,vram_dout} :
     32'h0;
 

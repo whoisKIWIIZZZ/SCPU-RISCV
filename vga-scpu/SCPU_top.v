@@ -184,7 +184,7 @@ wire [31:0] ps2_scancode;
 
    
     ROM U2_ROM_D(
-        .a({PC_out[12:2]}),
+        .a({PC_out[31:2]}),
         .spo(ROM_output)
     );
 

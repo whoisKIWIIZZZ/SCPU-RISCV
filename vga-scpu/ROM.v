@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 
 module ROM(
-    input  [9:0]  a,
+    input  [29:0]  a,
     output reg [31:0] spo
 );
 
@@ -20,7 +20,7 @@ module ROM(
             10'd10 : spo = 32'h00e12a23;
             10'd11 : spo = 32'h00f12823;
             10'd12 : spo = 32'h02010413;
-            10'd13 : spo = 32'hf00007b7;
+            10'd13 : spo = 32'ha00007b7;
             10'd14 : spo = 32'h00878793;
             10'd15 : spo = 32'hfef42623;
             10'd16 : spo = 32'hfec42783;
@@ -49,12 +49,12 @@ module ROM(
             10'd39 : spo = 32'h32170713;
             10'd40 : spo = 32'h00e7a023;
             10'd41 : spo = 32'h0000006f;
-            10'd42 : spo = 32'h7fd0006f;
-            10'd43 : spo = 32'h7f90006f;
-            10'd44 : spo = 32'h7f50006f;
-            10'd45 : spo = 32'h7f10006f;
-            10'd46 : spo = 32'h7ed0006f;
-            default : spo = 32'h00000013; // NOP
+            10'd42 : spo = 32'hFFDFF06F;
+            // 10'd43 : spo = 32'h7f90006f;
+            // 10'd44 : spo = 32'h7f50006f;
+            // 10'd45 : spo = 32'h7f10006f;
+            // 10'd46 : spo = 32'h7ed0006f;
+            default : spo = 32'hFFDFF06F; // NOP
         endcase
     end
 
