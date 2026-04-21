@@ -33,7 +33,9 @@ wire [31:0] counter_out;
         .rst(~rstn),
         .reg_we(audio_we),
         .reg_addr(audio_addr),
-        .reg_wdata(audio_in)
+        .reg_wdata(audio_in),
+        .AUD_PWM(AUD_PWM),
+        .AUD_SD(AUD_SD)
     );
 
 

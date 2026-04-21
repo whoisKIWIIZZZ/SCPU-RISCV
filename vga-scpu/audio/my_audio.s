@@ -10,7 +10,7 @@ Disassembly of section .text:
   28:	00812423          	sw	s0,8(sp)
   2c:	01010413          	addi	s0,sp,16
   30:	40000113          	li	sp,1024
-  34:	2d4000ef          	jal	308 <main>
+  34:	370000ef          	jal	3a4 <main>
   38:	0000006f          	j	38 <Entry+0x18>
 
 0000003c <handler>:
@@ -39,7 +39,7 @@ Disassembly of section .text:
   94:	a00007b7          	lui	a5,0xa0000
   98:	faf42023          	sw	a5,-96(s0)
   9c:	fa042783          	lw	a5,-96(s0)
-  a0:	0007a783          	lw	a5,0(a5) # a0000000 <__global_pointer$+0x9fffe43c>
+  a0:	0007a783          	lw	a5,0(a5) # a0000000 <__global_pointer$+0x9fffe438>
   a4:	f8f40fa3          	sb	a5,-97(s0)
   a8:	f9f44703          	lbu	a4,-97(s0)
   ac:	0f000793          	li	a5,240
@@ -47,12 +47,12 @@ Disassembly of section .text:
   b4:	08000793          	li	a5,128
   b8:	00100713          	li	a4,1
   bc:	00e78023          	sb	a4,0(a5)
-  c0:	0f80006f          	j	1b8 <handler+0x17c>
+  c0:	1080006f          	j	1c8 <handler+0x18c>
   c4:	e00007b7          	lui	a5,0xe0000
   c8:	f8f42c23          	sw	a5,-104(s0)
   cc:	f9f44703          	lbu	a4,-97(s0)
   d0:	f9842783          	lw	a5,-104(s0)
-  d4:	00e7a023          	sw	a4,0(a5) # e0000000 <__global_pointer$+0xdfffe43c>
+  d4:	00e7a023          	sw	a4,0(a5) # e0000000 <__global_pointer$+0xdfffe438>
   d8:	fff00793          	li	a5,-1
   dc:	faf42423          	sw	a5,-88(s0)
   e0:	fa042223          	sw	zero,-92(s0)
@@ -103,150 +103,151 @@ Disassembly of section .text:
  194:	fae45783          	lhu	a5,-82(s0)
  198:	00078593          	mv	a1,a5
  19c:	0c000513          	li	a0,192
- 1a0:	064000ef          	jal	204 <write>
+ 1a0:	074000ef          	jal	214 <write>
  1a4:	08000793          	li	a5,128
  1a8:	00078023          	sb	zero,0(a5)
  1ac:	fae45783          	lhu	a5,-82(s0)
- 1b0:	00078513          	mv	a0,a5
- 1b4:	0d0000ef          	jal	284 <update_keys>
- 1b8:	06c12083          	lw	ra,108(sp)
- 1bc:	06812283          	lw	t0,104(sp)
- 1c0:	06412303          	lw	t1,100(sp)
- 1c4:	06012383          	lw	t2,96(sp)
- 1c8:	05c12403          	lw	s0,92(sp)
- 1cc:	05812503          	lw	a0,88(sp)
- 1d0:	05412583          	lw	a1,84(sp)
- 1d4:	05012603          	lw	a2,80(sp)
- 1d8:	04c12683          	lw	a3,76(sp)
- 1dc:	04812703          	lw	a4,72(sp)
- 1e0:	04412783          	lw	a5,68(sp)
- 1e4:	04012803          	lw	a6,64(sp)
- 1e8:	03c12883          	lw	a7,60(sp)
- 1ec:	03812e03          	lw	t3,56(sp)
- 1f0:	03412e83          	lw	t4,52(sp)
- 1f4:	03012f03          	lw	t5,48(sp)
- 1f8:	02c12f83          	lw	t6,44(sp)
- 1fc:	07010113          	addi	sp,sp,112
- 200:	30200073          	mret
+ 1b0:	00078593          	mv	a1,a5
+ 1b4:	b0000537          	lui	a0,0xb0000
+ 1b8:	05c000ef          	jal	214 <write>
+ 1bc:	fae45783          	lhu	a5,-82(s0)
+ 1c0:	00078513          	mv	a0,a5
+ 1c4:	0d0000ef          	jal	294 <update_keys>
+ 1c8:	06c12083          	lw	ra,108(sp)
+ 1cc:	06812283          	lw	t0,104(sp)
+ 1d0:	06412303          	lw	t1,100(sp)
+ 1d4:	06012383          	lw	t2,96(sp)
+ 1d8:	05c12403          	lw	s0,92(sp)
+ 1dc:	05812503          	lw	a0,88(sp)
+ 1e0:	05412583          	lw	a1,84(sp)
+ 1e4:	05012603          	lw	a2,80(sp)
+ 1e8:	04c12683          	lw	a3,76(sp)
+ 1ec:	04812703          	lw	a4,72(sp)
+ 1f0:	04412783          	lw	a5,68(sp)
+ 1f4:	04012803          	lw	a6,64(sp)
+ 1f8:	03c12883          	lw	a7,60(sp)
+ 1fc:	03812e03          	lw	t3,56(sp)
+ 200:	03412e83          	lw	t4,52(sp)
+ 204:	03012f03          	lw	t5,48(sp)
+ 208:	02c12f83          	lw	t6,44(sp)
+ 20c:	07010113          	addi	sp,sp,112
+ 210:	30200073          	mret
 
-00000204 <write>:
- 204:	fd010113          	addi	sp,sp,-48
- 208:	02112623          	sw	ra,44(sp)
- 20c:	02812423          	sw	s0,40(sp)
- 210:	03010413          	addi	s0,sp,48
- 214:	fca42e23          	sw	a0,-36(s0)
- 218:	fcb42c23          	sw	a1,-40(s0)
- 21c:	fdc42783          	lw	a5,-36(s0)
- 220:	fef42623          	sw	a5,-20(s0)
- 224:	fec42783          	lw	a5,-20(s0)
- 228:	fd842703          	lw	a4,-40(s0)
- 22c:	00e7a023          	sw	a4,0(a5)
- 230:	00000013          	nop
- 234:	02c12083          	lw	ra,44(sp)
- 238:	02812403          	lw	s0,40(sp)
- 23c:	03010113          	addi	sp,sp,48
- 240:	00008067          	ret
+00000214 <write>:
+ 214:	fd010113          	addi	sp,sp,-48
+ 218:	02112623          	sw	ra,44(sp)
+ 21c:	02812423          	sw	s0,40(sp)
+ 220:	03010413          	addi	s0,sp,48
+ 224:	fca42e23          	sw	a0,-36(s0)
+ 228:	fcb42c23          	sw	a1,-40(s0)
+ 22c:	fdc42783          	lw	a5,-36(s0)
+ 230:	fef42623          	sw	a5,-20(s0)
+ 234:	fec42783          	lw	a5,-20(s0)
+ 238:	fd842703          	lw	a4,-40(s0)
+ 23c:	00e7a023          	sw	a4,0(a5)
+ 240:	00000013          	nop
+ 244:	02c12083          	lw	ra,44(sp)
+ 248:	02812403          	lw	s0,40(sp)
+ 24c:	03010113          	addi	sp,sp,48
+ 250:	00008067          	ret
 
-00000244 <wait>:
- 244:	fe010113          	addi	sp,sp,-32
- 248:	00112e23          	sw	ra,28(sp)
- 24c:	00812c23          	sw	s0,24(sp)
- 250:	02010413          	addi	s0,sp,32
- 254:	fea42623          	sw	a0,-20(s0)
- 258:	00000013          	nop
- 25c:	fec42783          	lw	a5,-20(s0)
- 260:	fff78713          	addi	a4,a5,-1
- 264:	fee42623          	sw	a4,-20(s0)
- 268:	fe079ae3          	bnez	a5,25c <wait+0x18>
- 26c:	00000013          	nop
- 270:	00000013          	nop
- 274:	01c12083          	lw	ra,28(sp)
- 278:	01812403          	lw	s0,24(sp)
- 27c:	02010113          	addi	sp,sp,32
- 280:	00008067          	ret
+00000254 <wait>:
+ 254:	fe010113          	addi	sp,sp,-32
+ 258:	00112e23          	sw	ra,28(sp)
+ 25c:	00812c23          	sw	s0,24(sp)
+ 260:	02010413          	addi	s0,sp,32
+ 264:	fea42623          	sw	a0,-20(s0)
+ 268:	00000013          	nop
+ 26c:	fec42783          	lw	a5,-20(s0)
+ 270:	fff78713          	addi	a4,a5,-1
+ 274:	fee42623          	sw	a4,-20(s0)
+ 278:	fe079ae3          	bnez	a5,26c <wait+0x18>
+ 27c:	00000013          	nop
+ 280:	00000013          	nop
+ 284:	01c12083          	lw	ra,28(sp)
+ 288:	01812403          	lw	s0,24(sp)
+ 28c:	02010113          	addi	sp,sp,32
+ 290:	00008067          	ret
 
-00000284 <update_keys>:
- 284:	fe010113          	addi	sp,sp,-32
- 288:	00112e23          	sw	ra,28(sp)
- 28c:	00812c23          	sw	s0,24(sp)
- 290:	02010413          	addi	s0,sp,32
- 294:	00050793          	mv	a5,a0
- 298:	fef41723          	sh	a5,-18(s0)
- 29c:	fee45683          	lhu	a3,-18(s0)
- 2a0:	c00007b7          	lui	a5,0xc0000
- 2a4:	00004737          	lui	a4,0x4
- 2a8:	fff70713          	addi	a4,a4,-1 # 3fff <__global_pointer$+0x243b>
- 2ac:	00e6f733          	and	a4,a3,a4
- 2b0:	00e7a023          	sw	a4,0(a5) # c0000000 <__global_pointer$+0xbfffe43c>
- 2b4:	00000013          	nop
- 2b8:	01c12083          	lw	ra,28(sp)
- 2bc:	01812403          	lw	s0,24(sp)
- 2c0:	02010113          	addi	sp,sp,32
- 2c4:	00008067          	ret
+00000294 <update_keys>:
+ 294:	fe010113          	addi	sp,sp,-32
+ 298:	00112e23          	sw	ra,28(sp)
+ 29c:	00812c23          	sw	s0,24(sp)
+ 2a0:	02010413          	addi	s0,sp,32
+ 2a4:	00050793          	mv	a5,a0
+ 2a8:	fef41723          	sh	a5,-18(s0)
+ 2ac:	fee45683          	lhu	a3,-18(s0)
+ 2b0:	c00007b7          	lui	a5,0xc0000
+ 2b4:	00004737          	lui	a4,0x4
+ 2b8:	fff70713          	addi	a4,a4,-1 # 3fff <__global_pointer$+0x2437>
+ 2bc:	00e6f733          	and	a4,a3,a4
+ 2c0:	00e7a023          	sw	a4,0(a5) # c0000000 <__global_pointer$+0xbfffe438>
+ 2c4:	00000013          	nop
+ 2c8:	01c12083          	lw	ra,28(sp)
+ 2cc:	01812403          	lw	s0,24(sp)
+ 2d0:	02010113          	addi	sp,sp,32
+ 2d4:	00008067          	ret
 
-000002c8 <read_keys_low2>:
- 2c8:	fe010113          	addi	sp,sp,-32
- 2cc:	00112e23          	sw	ra,28(sp)
- 2d0:	00812c23          	sw	s0,24(sp)
- 2d4:	02010413          	addi	s0,sp,32
- 2d8:	c00007b7          	lui	a5,0xc0000
- 2dc:	0007a783          	lw	a5,0(a5) # c0000000 <__global_pointer$+0xbfffe43c>
- 2e0:	fef42623          	sw	a5,-20(s0)
- 2e4:	fec42783          	lw	a5,-20(s0)
- 2e8:	0ff7f793          	zext.b	a5,a5
- 2ec:	0037f793          	andi	a5,a5,3
- 2f0:	0ff7f793          	zext.b	a5,a5
- 2f4:	00078513          	mv	a0,a5
- 2f8:	01c12083          	lw	ra,28(sp)
- 2fc:	01812403          	lw	s0,24(sp)
- 300:	02010113          	addi	sp,sp,32
- 304:	00008067          	ret
+000002d8 <init>:
+ 2d8:	ff010113          	addi	sp,sp,-16
+ 2dc:	00112623          	sw	ra,12(sp)
+ 2e0:	00812423          	sw	s0,8(sp)
+ 2e4:	01010413          	addi	s0,sp,16
+ 2e8:	01a00593          	li	a1,26
+ 2ec:	08400513          	li	a0,132
+ 2f0:	f25ff0ef          	jal	214 <write>
+ 2f4:	02200593          	li	a1,34
+ 2f8:	08800513          	li	a0,136
+ 2fc:	f19ff0ef          	jal	214 <write>
+ 300:	02100593          	li	a1,33
+ 304:	08c00513          	li	a0,140
+ 308:	f0dff0ef          	jal	214 <write>
+ 30c:	02a00593          	li	a1,42
+ 310:	09000513          	li	a0,144
+ 314:	f01ff0ef          	jal	214 <write>
+ 318:	03200593          	li	a1,50
+ 31c:	09400513          	li	a0,148
+ 320:	ef5ff0ef          	jal	214 <write>
+ 324:	03100593          	li	a1,49
+ 328:	09800513          	li	a0,152
+ 32c:	ee9ff0ef          	jal	214 <write>
+ 330:	03a00593          	li	a1,58
+ 334:	09c00513          	li	a0,156
+ 338:	eddff0ef          	jal	214 <write>
+ 33c:	01c00593          	li	a1,28
+ 340:	0a000513          	li	a0,160
+ 344:	ed1ff0ef          	jal	214 <write>
+ 348:	01b00593          	li	a1,27
+ 34c:	0a400513          	li	a0,164
+ 350:	ec5ff0ef          	jal	214 <write>
+ 354:	02300593          	li	a1,35
+ 358:	0a800513          	li	a0,168
+ 35c:	eb9ff0ef          	jal	214 <write>
+ 360:	02b00593          	li	a1,43
+ 364:	0ac00513          	li	a0,172
+ 368:	eadff0ef          	jal	214 <write>
+ 36c:	03400593          	li	a1,52
+ 370:	0b000513          	li	a0,176
+ 374:	ea1ff0ef          	jal	214 <write>
+ 378:	03300593          	li	a1,51
+ 37c:	0b400513          	li	a0,180
+ 380:	e95ff0ef          	jal	214 <write>
+ 384:	03b00593          	li	a1,59
+ 388:	0b800513          	li	a0,184
+ 38c:	e89ff0ef          	jal	214 <write>
+ 390:	00000013          	nop
+ 394:	00c12083          	lw	ra,12(sp)
+ 398:	00812403          	lw	s0,8(sp)
+ 39c:	01010113          	addi	sp,sp,16
+ 3a0:	00008067          	ret
 
-00000308 <main>:
- 308:	ff010113          	addi	sp,sp,-16
- 30c:	00112623          	sw	ra,12(sp)
- 310:	00812423          	sw	s0,8(sp)
- 314:	01010413          	addi	s0,sp,16
- 318:	01a00593          	li	a1,26
- 31c:	08400513          	li	a0,132
- 320:	ee5ff0ef          	jal	204 <write>
- 324:	02200593          	li	a1,34
- 328:	08800513          	li	a0,136
- 32c:	ed9ff0ef          	jal	204 <write>
- 330:	02100593          	li	a1,33
- 334:	08c00513          	li	a0,140
- 338:	ecdff0ef          	jal	204 <write>
- 33c:	02a00593          	li	a1,42
- 340:	09000513          	li	a0,144
- 344:	ec1ff0ef          	jal	204 <write>
- 348:	03200593          	li	a1,50
- 34c:	09400513          	li	a0,148
- 350:	eb5ff0ef          	jal	204 <write>
- 354:	03100593          	li	a1,49
- 358:	09800513          	li	a0,152
- 35c:	ea9ff0ef          	jal	204 <write>
- 360:	03a00593          	li	a1,58
- 364:	09c00513          	li	a0,156
- 368:	e9dff0ef          	jal	204 <write>
- 36c:	01c00593          	li	a1,28
- 370:	0a000513          	li	a0,160
- 374:	e91ff0ef          	jal	204 <write>
- 378:	01b00593          	li	a1,27
- 37c:	0a400513          	li	a0,164
- 380:	e85ff0ef          	jal	204 <write>
- 384:	02300593          	li	a1,35
- 388:	0a800513          	li	a0,168
- 38c:	e79ff0ef          	jal	204 <write>
- 390:	02b00593          	li	a1,43
- 394:	0ac00513          	li	a0,172
- 398:	e6dff0ef          	jal	204 <write>
- 39c:	03400593          	li	a1,52
- 3a0:	0b000513          	li	a0,176
- 3a4:	e61ff0ef          	jal	204 <write>
- 3a8:	03300593          	li	a1,51
- 3ac:	0b400513          	li	a0,180
- 3b0:	e55ff0ef          	jal	204 <write>
- 3b4:	03b00593          	li	a1,59
- 3b8:	0b800513          	li	a0,184
- 3bc:	e49ff0ef          	jal	204 <write>
- 3c0:	0000006f          	j	3c0 <main+0xb8>
+000003a4 <main>:
+ 3a4:	ff010113          	addi	sp,sp,-16
+ 3a8:	00112623          	sw	ra,12(sp)
+ 3ac:	00812423          	sw	s0,8(sp)
+ 3b0:	01010413          	addi	s0,sp,16
+ 3b4:	f25ff0ef          	jal	2d8 <init>
+ 3b8:	00900593          	li	a1,9
+ 3bc:	b0000537          	lui	a0,0xb0000
+ 3c0:	e55ff0ef          	jal	214 <write>
+ 3c4:	0000006f          	j	3c4 <main+0x20>

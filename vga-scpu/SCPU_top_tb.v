@@ -119,11 +119,13 @@ initial begin
 
     // 模拟按下 'A' (0x1C)
     ps2_send_byte(8'h1A);
-    ps2_send_byte(8'h32);
-    ps2_send_byte(8'h1C);
-     #500_000_000;
-   
-    //#30_000_000;
+    // ps2_send_byte(8'h32);
+    // ps2_send_byte(8'h1C);
+    
+    ps2_send_byte(8'hF0);
+    ps2_send_byte(8'h1A);
+    ps2_send_byte(8'h3B);
+    #300_000_000;
     // 模拟按下 'B' (0x32)
     ps2_send_byte(8'h32);
     ps2_send_byte(8'hF0);
@@ -149,11 +151,12 @@ end
 // CPU 状态实时监控 (保持原有显示逻辑)
 // =============================================================================
 always @(posedge uut.clk) begin
-    //$display("x15:0x%h|x14:0x%h|pc:0x%h|key:0x%b|0x%h|0x%b",uut.U1_SCPU.u_rf.rf[15],uut.U1_SCPU.u_rf.rf[14],uut.U1_SCPU.ID_EX_PC,uut.U_VGA.key_state,uut.U3_RAM_B.RAM[(uut.U1_SCPU.u_rf.rf[8]-82)/4],uut.ps2_ready);
+    //$display("x15:0x%h|x14:0x%h|pc:0x%h|key:0x%b|0x%h|0x%b",uut.AUD_PWM,uut.U1_SCPU.u_rf.rf[14],uut.U1_SCPU.ID_EX_PC,uut.U_VGA.key_state,uut.U3_RAM_B.RAM[32],uut.ps2_ready);
     // if(uut.U3_RAM_B.RAM[1030])
     //      $display("yes");
     //$display("pc:0x%h,X31:0x%h,x15:0x%h,mepc:0x%h", uut.U1_SCPU.ID_EX_PC, uut.U1_SCPU.u_rf.rf[31],uut.U1_SCPU.u_rf.rf[15],uut.U1_SCPU.mepc);
-    // $display("PC:0x%h|Ready:0x%h|ready:%h|get_rd:0x%h|RD:0x%h",uut.U1_SCPU.ID_EX_PC,uut.U_PS2.ps2_kbd.PS2_shift,uut.U_PS2.ps2_kbd.ready,uut.U_PS2.get_RD,uut.U_PS2.RD);
+    $display("pc:0x%h,cnt:%d,pwm:%h,slot_gates:%h,slot_freqs:%h", uut.U1_SCPU.ID_EX_PC,
+         uut.U_AUDIO_INTERFACE.pwm_cnt,uut.U_AUDIO_INTERFACE.mix_out,uut.U_AUDIO_INTERFACE.synth_core.env_a,uut.U_AUDIO_INTERFACE.synth_core.slot_gates[1]);
     // 中断监控
     if (uut.U1_SCPU.int_taken) begin
         int_trigger_count = int_trigger_count + 1;

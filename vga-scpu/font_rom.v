@@ -4,7 +4,7 @@ module font_rom(
 );
 
     // 定义字体ROM数组: 1024个条目 × 8位
-    reg [7:0] font_mem [0:1023];
+    reg [31:0] font_mem [0:1023];
     
     // ★ 仿真时初始化: 读取十六进制.dat文件
     initial begin

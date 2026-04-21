@@ -17,7 +17,7 @@ module adsr (
     // ---- 1ms Tick 发生器 (假设系统时钟 100MHz) ----
     // 包络不需要在 100MHz 下更新，1ms 更新一次足够平滑
     reg [16:0] tick_cnt;
-    wire tick = (tick_cnt >= 17'd100_000);
+    wire tick = (tick_cnt >= 17'd100000);
     
     always @(posedge clk) begin
         if (rst || tick) tick_cnt <= 0;
@@ -54,7 +54,7 @@ module adsr (
                     end
 
                     ATTACK: begin
-                        if (env_acc + attack_step >= 17'hFFFF) begin
+                        if (env_acc + attack_step >= 17'd65535) begin
                             env_acc <= 17'hFFFF;
                             state   <= DECAY;
                         end else begin
