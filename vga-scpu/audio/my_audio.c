@@ -15,7 +15,7 @@ void Entry()
 #define KEYBOARD_ADDR       0xA0000000
 #define AUDIO_ADDR          0xB0000000
 #define VGA_ADDR            0xC0000000
-#define DISPLAY_BASE        0x000000A0
+#define DISPLAY_BASE        0x000000C0
 #define f0_pending          (*(volatile uint8_t *)0x00000080)
 #define MAP_ADDR            0x00000084
 #define SCAN_MAP_IN_MEM     ((volatile int*)0x00000084)
@@ -71,6 +71,7 @@ __attribute__((interrupt)) void handler()
             keys_state |= (1U << bit_idx);
         }
     }
+    write(DISPLAY_BASE, keys_state);
     f0_pending = 0;
 
     update_keys(keys_state);
@@ -115,13 +116,22 @@ uint8_t read_keys_low2(void) {
 }
 void main()
 {
-    unsigned char SCAN_MAP[14] = {
-    0x1A, 0x22, 0x21, 0x2A, 0x32, 0x31, 0x3A, 
-    0x1C, 0x1B, 0x23, 0x2B, 0x34, 0x33, 0x3B
-};
-    for(int i=0;i<14;i++){
-        write(MAP_ADDR + (i << 2), (int)SCAN_MAP[i]);
-    }
+    write(MAP_ADDR + (0 << 2), (int)0x1A);
+    write(MAP_ADDR + (1 << 2), (int)0x22);
+    write(MAP_ADDR + (2 << 2), (int)0x21);
+    write(MAP_ADDR + (3 << 2), (int)0x2A);
+    write(MAP_ADDR + (4 << 2), (int)0x32);
+    write(MAP_ADDR + (5 << 2), (int)0x31);
+
+    write(MAP_ADDR + (6 << 2), (int)0x3A);
+    write(MAP_ADDR + (7 << 2), (int)0x1C);
+    write(MAP_ADDR + (8 << 2), (int)0x1B);
+    write(MAP_ADDR + (9 << 2), (int)0x23);
+    write(MAP_ADDR + (10<< 2), (int)0x2B);
+    write(MAP_ADDR + (11<< 2), (int)0x34);
+
+    write(MAP_ADDR + (12<< 2), (int)0x33);
+    write(MAP_ADDR + (13<< 2), (int)0x3B);
     begin:
     goto begin;
 }

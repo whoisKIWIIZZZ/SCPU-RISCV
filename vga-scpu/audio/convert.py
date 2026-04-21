@@ -26,7 +26,7 @@ def coe_to_verilog(coe_filename, v_filename):
                 f.write(f"            10'd{i} : spo = 32'h{data.lower()};\n")
 
             # 默认情况（NOP 或 0）
-            f.write("            default : spo = 32'h00000013; // NOP\n")
+            f.write("            default : spo = 32'hffdff06f; // NOP\n")
             f.write("        endcase\n")
             f.write("    end\n\n")
             f.write("endmodule\n")

@@ -39,7 +39,7 @@ main uut(
 );
 
 // 时钟生成：100MHz
-initial begin clk = 0; forever #5 clk = ~clk; end
+initial begin clk = 0; forever #1 clk = ~clk; end
 
 // 统计与监控变量
 integer predict_hit, predict_miss;
@@ -118,26 +118,24 @@ initial begin
     // $display("--- 开始发送 PS2 扫描码 ---");
 
     // 模拟按下 'A' (0x1C)
-    // ps2_send_byte(8'h29);
-    // //#10_000_000;
-    // ps2_send_byte(8'hF0);
-    // ps2_send_byte(8'h29);
-    // ps2_send_byte(8'h29);
-    // ps2_send_byte(8'hF0);
-    // ps2_send_byte(8'h29);
-    // //#30_000_000;
-    // // 模拟按下 'B' (0x32)
-    // ps2_send_byte(8'h32);
-    // ps2_send_byte(8'hF0);
-    // ps2_send_byte(8'h32);
-    //  #30_000_000;
-    // ps2_send_byte(8'h29);
-    // ps2_send_byte(8'hF0);
-    // ps2_send_byte(8'h29);
-    // #30_000_000;
-    //     ps2_send_byte(8'h29);
-    // ps2_send_byte(8'hF0);
-    // ps2_send_byte(8'h29);
+    ps2_send_byte(8'h1A);
+    ps2_send_byte(8'h32);
+    ps2_send_byte(8'h1C);
+     #500_000_000;
+   
+    //#30_000_000;
+    // 模拟按下 'B' (0x32)
+    ps2_send_byte(8'h32);
+    ps2_send_byte(8'hF0);
+    ps2_send_byte(8'h32);
+     #30_000_000;
+    ps2_send_byte(8'h29);
+    ps2_send_byte(8'hF0);
+    ps2_send_byte(8'h29);
+    #30_000_000;
+        ps2_send_byte(8'h29);
+    ps2_send_byte(8'hF0);
+    ps2_send_byte(8'h29);
     #30_000_000;
 
     // // 运行一段时间观察中断和 VGA 抓帧
@@ -151,7 +149,7 @@ end
 // CPU 状态实时监控 (保持原有显示逻辑)
 // =============================================================================
 always @(posedge uut.clk) begin
-    //$display("pc:0x%h|x1:0x%h|key:0x%b|0x%h",uut.U1_SCPU.u_rf.rf[15],uut.U1_SCPU.ID_EX_PC,uut.U_VGA.key_state,uut.U4_MIO_BUS.vram_we);
+    //$display("x15:0x%h|x14:0x%h|pc:0x%h|key:0x%b|0x%h|0x%b",uut.U1_SCPU.u_rf.rf[15],uut.U1_SCPU.u_rf.rf[14],uut.U1_SCPU.ID_EX_PC,uut.U_VGA.key_state,uut.U3_RAM_B.RAM[(uut.U1_SCPU.u_rf.rf[8]-82)/4],uut.ps2_ready);
     // if(uut.U3_RAM_B.RAM[1030])
     //      $display("yes");
     //$display("pc:0x%h,X31:0x%h,x15:0x%h,mepc:0x%h", uut.U1_SCPU.ID_EX_PC, uut.U1_SCPU.u_rf.rf[31],uut.U1_SCPU.u_rf.rf[15],uut.U1_SCPU.mepc);
