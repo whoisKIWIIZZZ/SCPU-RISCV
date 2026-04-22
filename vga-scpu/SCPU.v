@@ -35,7 +35,8 @@ wire [31:0] alu_res;
 wire [31:0] alu_A, alu_B;
 wire        Zero, Neg, Of, Cy;
 wire        jump_taken;
-
+wire is_mret_EX_MEM;
+wire is_mret_ID_EX;
 // =============================================================================
 // 中断相关寄存器和信号
 // =============================================================================
@@ -65,16 +66,20 @@ always @(posedge clk or posedge reset) begin
         int_req <= 1'b0;
     else if (INT && !int_taken)
         int_req <= 1'b1;
-    else if (int_taken)
+    else 
         int_req <= 1'b0;
 end
+reg [31:0] IF_ID_PC_saved;
 
+always @(posedge clk) begin
+    IF_ID_PC_saved <= IF_ID_PC;  // 每拍都保存上一拍的IF_ID_PC
+end
 // mepc：中断发生时保存当前IF阶段PC（即将执行的指令地址）
 always @(posedge clk or posedge reset) begin
     if (reset)
         mepc <= 32'h0;
     else if (int_taken)
-        mepc <= PC;        // 保存当前PC，中断返回后从这里继续
+        mepc <= IF_ID_PC_saved;        // 保存当前PC，中断返回后从这里继续
 end
 
 // ie：中断发生时关中断，mret时重新开中断
@@ -83,7 +88,7 @@ always @(posedge clk or posedge reset) begin
         ie <= 1'b1;        // 复位后默认开中断
     else if (int_taken)
         ie <= 1'b0;        // 进入中断服务程序，关中断防止嵌套
-    else if (is_mret)
+    else if (is_mret_EX_MEM)
         ie <= 1'b1;        // mret返回，重新开中断
 end
 
@@ -113,7 +118,7 @@ wire flush_IF_ID;
 wire if_id_stall;
 
 // 中断发生时也要flush IF/ID
-assign flush_IF_ID = (is_jump | mispredicted | is_predict_taken | int_taken) & !pc_stall;
+assign flush_IF_ID = (is_jump | mispredicted | is_predict_taken | int_taken|is_mret_ID_EX) & !pc_stall;
 
 GRE_array #(.WIDTH(64)) IF_ID(
     .clk(clk),
@@ -205,13 +210,13 @@ assign is_predict_taken = Branch & ID_branch_taken;
 // [63:32]    imm
 // [31:0]     PC
 // =============================================================================
-wire [164:0] ID_EX_in, ID_EX_out;
+wire [165:0] ID_EX_in, ID_EX_out;
 wire         flush_ID_EX;
 wire         id_ex_bubble;
 wire         is_jal;
 
 // 中断发生时也要flush ID/EX
-assign flush_ID_EX  = (is_jump | mispredicted | int_taken) & !pc_stall;
+assign flush_ID_EX  = (is_jump | mispredicted | int_taken|is_mret_ID_EX) & !pc_stall;
 assign is_jal       = Branch & RegDst;
 assign id_ex_bubble = pc_stall;
 
@@ -246,7 +251,7 @@ wire [2:0]  ID_EX_funct3;
 wire [4:0]  ID_EX_rs1, ID_EX_rs2, ID_EX_rd;
 wire [31:0] ID_EX_rd1, ID_EX_rd2, ID_EX_imm, ID_EX_PC;
 
-wire  is_mret_ID_EX       = ID_EX_out[165];
+assign  is_mret_ID_EX       = ID_EX_out[165];
 assign ID_EX_predict      = ID_EX_out[164];
 assign ID_EX_is_jal       = ID_EX_out[163];
 assign ID_EX_Jump         = ID_EX_out[162];
@@ -273,14 +278,14 @@ assign ID_EX_PC           = ID_EX_out[31:0];
 // =============================================================================
 // EX/MEM 流水线寄存器（提前声明）
 // =============================================================================
-wire [107:0] EX_MEM_in, EX_MEM_out;
+wire [109:0] EX_MEM_in, EX_MEM_out;
 
 wire EX_MEM_RegWrite, EX_MEM_MemtoReg, EX_MEM_RegDst;
 wire EX_MEM_MemWrite;
 wire [2:0]  EX_MEM_dm_ctrl;
 wire [31:0] EX_MEM_alu_res, EX_MEM_rd2_stored, EX_MEM_pc_plus_4;
 wire [4:0]  EX_MEM_rd;
-wire is_mret_EX_MEM;
+
 assign {is_mret_EX_MEM,EX_MEM_RegWrite, EX_MEM_MemtoReg, EX_MEM_RegDst,
         EX_MEM_MemWrite, EX_MEM_dm_ctrl,
         EX_MEM_alu_res, EX_MEM_rd2_stored, EX_MEM_pc_plus_4,
@@ -452,7 +457,7 @@ assign EX_MEM_in = {
     ID_EX_rd
 };
 
-GRE_array #(.WIDTH(109)) EX_MEM_reg(
+GRE_array #(.WIDTH(110)) EX_MEM_reg(
     .clk(clk),
     .rst(reset),
     .write_enable(1'b1),

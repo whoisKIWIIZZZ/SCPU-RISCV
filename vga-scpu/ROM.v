@@ -241,7 +241,10 @@ module ROM(
             10'd231 : spo = 32'hb0000537;
             10'd232 : spo = 32'he55ff0ef;
             10'd233 : spo = 32'h0000006f;
-            default : spo = 32'hffdff06f; // NOP
+            10'd234 : spo = 32'hffdff06f;
+            10'd235 : spo = 32'hffdff06f;
+            10'd236 : spo = 32'hffdff06f;
+            default : spo = 32'h00000013; // NOP
         endcase
     end
 
