@@ -79,7 +79,7 @@ always @(posedge clk or posedge reset) begin
     if (reset)
         mepc <= 32'h0;
     else if (int_taken)
-        mepc <= IF_ID_PC_saved;        // 保存当前PC，中断返回后从这里继续
+        mepc <= PC;        // 保存当前PC，中断返回后从这里继续
 end
 
 // ie：中断发生时关中断，mret时重新开中断
