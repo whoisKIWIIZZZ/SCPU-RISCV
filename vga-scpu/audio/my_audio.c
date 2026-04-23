@@ -16,7 +16,8 @@ void Entry()
 #define AUDIOFILTER_ADDR    0xB2000000
 #define VGA_ADDR            0xC0000000
 #define DISPLAY_BASE        0x000000C0
-#define f0_pending          (*(volatile uint8_t *)0x00000080)
+#define f0_pending          (*(volatile uint8_t *)0x0000007C)
+#define shift_pending       (*(volatile uint8_t *)0x00000080)
 #define MAP_ADDR            0x00000084
 #define SCAN_MAP_IN_MEM     ((volatile int*)0x00000084)
 
@@ -24,13 +25,16 @@ void wait(int cycles);
 void write(int addr,int data);
 void read(int addr,int *data);
 int transform(int data);
-void update_keys(uint16_t keys_mask);
+void update_keys(uint32_t keys_mask);
 __attribute__((interrupt)) void handler()
 {
-    uint16_t keys_state = *(uint16_t*)DISPLAY_BASE;
+    uint32_t keys_state = *(uint32_t*)DISPLAY_BASE;
     unsigned char key;
     int *p = (int *)(KEYBOARD_ADDR);
     key = *p;
+    if(key == 0x12){
+        shift_pending = 1;
+    }
     if (key == 0xF0) {
         f0_pending = 1;
         return; // 本次仅为前缀，不更新状态，等待下次中断
@@ -39,14 +43,23 @@ __attribute__((interrupt)) void handler()
     *q = key;
 
     int bit_idx = -1;
-    for (int i = 0; i < 14; i++) {
+    for (int i = 0; i <= 14; i++) {
         if (key == (unsigned char)SCAN_MAP_IN_MEM[i]){
             bit_idx = i;
             break;
         }
     }
+    if(shift_pending && f0_pending){
+        f0_pending = 0;
+        shift_pending = 0;
+        return;
+    }
+    
 
     if (bit_idx != -1) {
+        if(shift_pending){
+        bit_idx += 12;
+    }
         if (f0_pending) {
             // 释放事件：清零对应位 (即“删掉”)
             keys_state &= ~(1U << bit_idx);
@@ -67,27 +80,35 @@ void write(int addr,int data)
 }
 __attribute__((noinline))void wait(int cycles){while(cycles--);}
 
-void update_keys(uint16_t keys_mask) {
+void update_keys(uint32_t keys_mask) {
     *(volatile uint32_t*)VGA_ADDR = (uint32_t)(keys_mask & 0x3FFF);
 }
 
 void init(){
-    write(MAP_ADDR + (0 << 2), (int)0x1A);
-    write(MAP_ADDR + (1 << 2), (int)0x22);
-    write(MAP_ADDR + (2 << 2), (int)0x21);
-    write(MAP_ADDR + (3 << 2), (int)0x2A);
-    write(MAP_ADDR + (4 << 2), (int)0x32);
-    write(MAP_ADDR + (5 << 2), (int)0x31);
+    write(MAP_ADDR + (0 << 2), (int)0x1A);//C3
+    write(MAP_ADDR + (1 << 2), (int)0x22);//D3
+    write(MAP_ADDR + (2 << 2), (int)0x21);//E3
+    write(MAP_ADDR + (3 << 2), (int)0x2A);//F3
+    write(MAP_ADDR + (4 << 2), (int)0x32);//G3
+    write(MAP_ADDR + (5 << 2), (int)0x31);//A3
+    write(MAP_ADDR + (6 << 2), (int)0x3A);//B3
 
-    write(MAP_ADDR + (6 << 2), (int)0x3A);
-    write(MAP_ADDR + (7 << 2), (int)0x1C);
-    write(MAP_ADDR + (8 << 2), (int)0x1B);
-    write(MAP_ADDR + (9 << 2), (int)0x23);
-    write(MAP_ADDR + (10<< 2), (int)0x2B);
-    write(MAP_ADDR + (11<< 2), (int)0x34);
+    write(MAP_ADDR + (7 << 2), (int)0x1C);//C3
+    write(MAP_ADDR + (8 << 2), (int)0x1B);//D3
+    write(MAP_ADDR + (9 << 2), (int)0x23);//E3
+    write(MAP_ADDR + (10<< 2), (int)0x2B);//F3
+    write(MAP_ADDR + (11<< 2), (int)0x34);//G3
+    write(MAP_ADDR + (12<< 2), (int)0x33);//A3
+    write(MAP_ADDR + (13<< 2), (int)0x3B);//B3
 
-    write(MAP_ADDR + (12<< 2), (int)0x33);
-    write(MAP_ADDR + (13<< 2), (int)0x3B);
+    write(MAP_ADDR + (14<< 2), (int)0x15);//C3
+    write(MAP_ADDR + (15<< 2), (int)0x1D);//D3
+    write(MAP_ADDR + (16<< 2), (int)0x24);//E3
+    write(MAP_ADDR + (17<< 2), (int)0x2D);//F3
+    write(MAP_ADDR + (18<< 2), (int)0x2C);//G3
+    write(MAP_ADDR + (19<< 2), (int)0x35);//A3
+    write(MAP_ADDR + (20<< 2), (int)0x3C);//B3
+
 }
 void main()
 {

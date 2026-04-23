@@ -154,7 +154,7 @@ always @(posedge uut.clk) begin
     //$display("x15:0x%h|x14:0x%h|pc:0x%h|key:0x%b|0x%h|0x%b",uut.AUD_PWM,uut.U1_SCPU.u_rf.rf[14],uut.U1_SCPU.ID_EX_PC,uut.U_VGA.key_state,uut.U3_RAM_B.RAM[32],uut.ps2_ready);
     // if(uut.U3_RAM_B.RAM[1030])
     //      $display("yes");
-    $display("pc:0x%h,X31:0x%h,x15:0x%h,mepc:0x%h", uut.U1_SCPU.ID_EX_PC, uut.U1_SCPU.u_rf.rf[2],{uut.U1_SCPU.is_mret_EX_MEM,uut.U1_SCPU.is_mret_ID_EX,uut.U1_SCPU.ie,uut.U1_SCPU.int_taken,uut.U1_SCPU.int_req,uut.U1_SCPU.INT},uut.U1_SCPU.mepc);
+   // $display("pc:0x%h,X31:0x%h,x15:0x%h,mepc:0x%h", uut.U1_SCPU.ID_EX_PC, uut.U1_SCPU.u_rf.rf[2],{uut.U1_SCPU.is_mret_EX_MEM,uut.U1_SCPU.is_mret_ID_EX,uut.U1_SCPU.ie,uut.U1_SCPU.int_taken,uut.U1_SCPU.int_req,uut.U1_SCPU.INT},uut.U1_SCPU.mepc);
     // $display("pc:0x%h,cnt:%d,pwm:%h,slot_gates:%h,slot_freqs:%h", uut.U1_SCPU.ID_EX_PC,
     //      uut.U_AUDIO_INTERFACE.pwm_cnt,uut.U_AUDIO_INTERFACE.mix_out,uut.U_AUDIO_INTERFACE.synth_core.env_a,uut.U_AUDIO_INTERFACE.synth_core.slot_gates[1]);
     // 中断监控
