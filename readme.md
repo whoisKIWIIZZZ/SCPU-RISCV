@@ -3,6 +3,7 @@
 
 
 ## Hint
+### Icarus Verilog
 如果你使用*Icarus Verilog*,那么你需要解决`Counter`模块对中断带来的BUG.在一个always块里写:
 ```verilog
 force uut.U9_Counter_x.counter0_OUT = 1'b0;  // 强制counter不触发
@@ -14,14 +15,17 @@ force uut.U9_Counter_x.counter_ch = 2'b0;
 //同时,代码里不能有对counter赋值的语句.
 ```
 
-4.14:在中断的计数器,我用了`x31`作为全局计数器.问题在于,中断函数会自动保存`x31`.所以,你需要手动找到dat并且把那条指令弄成`00000013`.
-
+### fuck interrupt
 并且,![thx zoomy](image.png).所以,在`coe`的末尾,加上
 ```asm
 ff9ff06f
 ff5ff06f
 ```
 来防止出现潜在的BUG.
+
+在实际中,我用了`ROM.v`替代coe,并在PC的最后生成了几条`FFDFF06F(jal x0,-4)`.
+
+并且,遇到了“稳定触发7次中断就会死掉”的bug.这是由于`mret`之后没有正确flush流水线,导致错误的执行了`mret`的下一条指令,也就是开栈针.需要考虑
 # TIMELINE-BACKUP
 - 3.27 验收了单周期CPU
 - 发现在连续的JAL指令会出现bug,原因出自跳转确认被放置在了EX/MEM阶段.解决办法是在ID/EX特判一下JAL(没错,我单周期判断JAL是通过branch & RegDest的信号判断的而不是单独传一个JAL信号)
@@ -38,5 +42,6 @@ assign jump_target = (forward_A_val + ID_EX_imm) & ~32'b1;//new
 - 4.7 实现了VGA模块和PS2模块(也许).
 - 4.13 i hate rebuttal.
 - 4.15 实现了声音,UNISON.
+- 4.22 成功测试键盘中断,现在他可以在显示器上实现初步的MIDI可视化功能了.
 # Acknowledge
 - thx [Zoomy](https://github.com/zoomy14112/SingleCPU)
