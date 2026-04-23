@@ -196,139 +196,211 @@ always @(*) begin
     end
 end
 
-function [7:0] nc0; input [3:0] i;
-    case(i)
-        4'd0:"C" 4'd1:"C" 4'd2:"D" 4'd3:"D" 4'd4:"E"
-        4'd5:"F" 4'd6:"F" 4'd7:"G" 4'd8:"G" 4'd9:"A"
-        4'd10:"A" 4'd11:"B" 4'd12:"C" 4'd13:"C"
-        default:" "
-    endcase
-endfunction
-function [7:0] nc1; input [3:0] i;
-    case(i)
-        4'd0:" " 4'd1:"#" 4'd2:" " 4'd3:"#" 4'd4:" "
-        4'd5:" " 4'd6:"#" 4'd7:" " 4'd8:"#" 4'd9:" "
-        4'd10:"#" 4'd11:" " 4'd12:"5" 4'd13:"#"
-        default:" "
-    endcase
-endfunction
-
-wire [9:0] lbl_cx  = col - 10'd95;
-wire       lbl_sel = lbl_cx[3];
-wire [2:0] lbl_px  = lbl_cx[2:0];
-wire [7:0] lbl_ascii = lbl_sel ? nc1(note_idx) : nc0(note_idx);
-
-wire draw_line_on  = in_note_line &&  key_state[note_idx];
-wire draw_line_dim = in_note_line && !key_state[note_idx];
-
-// ============================================================
-// 9. WATERMARK  "kiwiizzz & zoomy"
-//    col[496,639] row[470,477]   18 chars=144px
-// ============================================================
-wire in_wm = (col>=10'd496)&&(col<10'd640)&&(row>=9'd470)&&(row<9'd478);
-wire [9:0] wmx   = col - 10'd496;
-wire [4:0] wm_ci = wmx[7:3];   // FIX 4: 5-bit
-wire [2:0] wm_py = row - 9'd470; // FIX 5: relative
-wire [2:0] wm_px = wmx[2:0];
-
-function [7:0] wm_ch; input [4:0] ci;
-    case(ci)
-        5'd0:"k" 5'd1:"i" 5'd2:"w" 5'd3:"i" 5'd4:"i"
-        5'd5:"z" 5'd6:"z" 5'd7:"z" 5'd8:" " 5'd9:"&"
-        5'd10:" " 5'd11:"z" 5'd12:"o" 5'd13:"o"
-        5'd14:"m" 5'd15:"y"
-        default:" "
-    endcase
+function [7:0] nc0;
+    input [3:0] i;
+    begin
+        case(i)
+            4'd0, 4'd1:  nc0 = 8'h43; // 'C'
+            4'd2, 4'd3:  nc0 = 8'h44; // 'D'
+            4'd4:        nc0 = 8'h45; // 'E'
+            4'd5, 4'd6:  nc0 = 8'h46; // 'F'
+            4'd7, 4'd8:  nc0 = 8'h47; // 'G'
+            4'd9, 4'd10: nc0 = 8'h41; // 'A'
+            4'd11:       nc0 = 8'h42; // 'B'
+            4'd12, 4'd13:nc0 = 8'h43; // 'C'
+            default:     nc0 = 8'h20; // ' '
+        endcase
+    end
 endfunction
 
-// ============================================================
-// 10. FLOWING RGB GRADIENT  col[180,459] row[160,319]
-// ============================================================
-wire in_grad = (col>=10'd180)&&(col<=10'd459)&&(row>=9'd160)&&(row<=9'd319);
-wire [9:0] gx = col - 10'd180;   // 0..279
-wire [8:0] gy = row - 9'd160;    // 0..159
+function [7:0] nc1;
+    input [3:0] i;
+    begin
+        case(i)
+            4'd0, 4'd2, 4'd4, 4'd5, 4'd7, 4'd9, 4'd11: nc1 = 8'h20; // ' '
+            4'd1, 4'd3, 4'd6, 4'd8, 4'd10, 4'd13:      nc1 = 8'h23; // '#'
+            4'd12:                                     nc1 = 8'h35; // '5'
+            default:                                   nc1 = 8'h20; // ' '
+        endcase
+    end
+endfunction
 
-// hue 0..191: gx*192/280 approx gx*11>>4
-// FIX 3: widen all intermediates
-wire [12:0] hue_base = ({3'b0,gx} * 13'd11) >> 4;           // 0..191
-wire [9:0]  scroll   = {frame_cnt[7:0], 1'b0};               // 0..510
-wire [12:0] hue_raw  = {3'b0, hue_base[7:0]} + {3'b0,scroll};
-// mod 192 (hue_raw max ~701): subtract 192 up to 3 times
-wire [9:0]  h0 = hue_raw[9:0];
-wire [9:0]  h1 = (h0 >= 10'd384) ? h0 - 10'd384 : h0;
-wire [9:0]  h2 = (h1 >= 10'd192) ? h1 - 10'd192 : h1;
-wire [7:0]  hue6 = h2[7:0];   // 0..191
+    // ============================================================
+    // 8. Note Label Logic (Fixed Syntax)
+    // ============================================================
+    wire [9:0] lbl_cx  = col - 10'd95;
+    wire       lbl_sel = lbl_cx[3];
+    wire [2:0] lbl_px  = lbl_cx[2:0];
+    
+    // 假设 note_idx 已在前文定义
+    wire [7:0] lbl_ascii = lbl_sel ? nc1(note_idx) : nc0(note_idx);
 
-wire [2:0] sector  = hue6[7:5];
-wire [7:0] ramp_up = {hue6[4:0], 3'b000};
-wire [7:0] ramp_dn = 8'd248 - {hue6[4:0], 3'b000};
+    wire draw_line_on  = in_note_line &&  key_state[note_idx];
+    wire draw_line_dim = in_note_line && !key_state[note_idx];
 
-reg [7:0] rh, gh, bh;
-always @(*) begin
-    case (sector)
-        3'd0: begin rh=8'hF8; gh=ramp_up; bh=8'h00; end
-        3'd1: begin rh=ramp_dn; gh=8'hF8; bh=8'h00; end
-        3'd2: begin rh=8'h00; gh=8'hF8; bh=ramp_up; end
-        3'd3: begin rh=8'h00; gh=ramp_dn; bh=8'hF8; end
-        3'd4: begin rh=ramp_up; gh=8'h00; bh=8'hF8; end
-        3'd5: begin rh=8'hF8; gh=8'h00; bh=ramp_dn; end
-        default: begin rh=0; gh=0; bh=0; end
-    endcase
-end
 
-// Vertical soft fade alpha 0..15
-wire [8:0] gy_bot  = 9'd159 - gy;
-wire [8:0] gy_near = (gy < gy_bot) ? gy : gy_bot;
-wire [3:0] alpha   = (gy_near >= 9'd24) ? 4'hF : gy_near[4:1];
 
-// FIX 3: explicit widen before multiply
-wire [11:0] rs = {4'b0,rh} * {8'b0,alpha};
-wire [11:0] gs = {4'b0,gh} * {8'b0,alpha};
-wire [11:0] bs = {4'b0,bh} * {8'b0,alpha};
+    // ============================================================
+    // 9. WATERMARK "kiwiizzz & zoomy" (Fixed Syntax)
+    // ============================================================
+    wire in_wm = (col>=10'd496)&&(col<10'd640)&&(row>=9'd470)&&(row<9'd478);
+    wire [9:0] wmx   = col - 10'd496;
+    wire [4:0] wm_ci = wmx[7:3];   // Character Index
+    wire [2:0] wm_py = row - 9'd470; // Pixel Y within char
+    wire [2:0] wm_px = wmx[2:0];   // Pixel X within char
 
-// /15 ~= *17>>8, widen to 16b
-wire [15:0] rd = ({4'b0,rs} * 16'd17) >> 8;
-wire [15:0] gd = ({4'b0,gs} * 16'd17) >> 8;
-wire [15:0] bd = ({4'b0,bs} * 16'd17) >> 8;
+    function [7:0] wm_ch;
+        input [4:0] ci;
+        begin
+            case(ci)
+                5'd0:  wm_ch = 8'h6B; // 'k'
+                5'd1:  wm_ch = 8'h69; // 'i'
+                5'd2:  wm_ch = 8'h77; // 'w'
+                5'd3:  wm_ch = 8'h69; // 'i'
+                5'd4:  wm_ch = 8'h69; // 'i'
+                5'd5:  wm_ch = 8'h7A; // 'z'
+                5'd6:  wm_ch = 8'h7A; // 'z'
+                5'd7:  wm_ch = 8'h7A; // 'z'
+                5'd8:  wm_ch = 8'h20; // ' '
+                5'd9:  wm_ch = 8'h26; // '&'
+                5'd10: wm_ch = 8'h20; // ' '
+                5'd11: wm_ch = 8'h7A; // 'z'
+                5'd12: wm_ch = 8'h6F; // 'o'
+                5'd13: wm_ch = 8'h6F; // 'o'
+                5'd14: wm_ch = 8'h6D; // 'm'
+                5'd15: wm_ch = 8'h79; // 'y'
+                default: wm_ch = 8'h20; // ' '
+            endcase
+        end
+    endfunction
 
-wire [3:0] r_grad = rd[7:4];
-wire [3:0] g_grad = gd[7:4];
-wire [3:0] b_grad = bd[7:4];
+    // ============================================================
+    // 10. FLOWING RGB GRADIENT (Logic Verified)
+    // ============================================================
+    wire in_grad = (col>=10'd180)&&(col<=10'd459)&&(row>=9'd160)&&(row<=9'd319);
+    wire [9:0] gx = col - 10'd180;   // 0..279
+    wire [8:0] gy = row - 9'd160;    // 0..159
 
-// ============================================================
-// 11. Font ROM MUX
-// ============================================================
-always @(*) begin
-    if (in_abc)
-        font_addr = {abc_ascii, abc_py};
-    else if (in_wm)
-        font_addr = {wm_ch(wm_ci), wm_py};
-    else if (in_txt)
-        font_addr = {txt_ascii, txt_py};
-    else
-        font_addr = {lbl_ascii, note_lbl_py};
-end
+    // Hue calculation
+    wire [12:0] hue_base = ({3'b0,gx} * 13'd11) >> 4;           
+    wire [9:0]  scroll   = {frame_cnt[7:0], 1'b0};               
+    wire [12:0] hue_raw  = {3'b0, hue_base[7:0]} + {3'b0,scroll};
+    
+    // Modulo 192 logic
+    wire [9:0]  h0 = hue_raw[9:0];
+    wire [9:0]  h1 = (h0 >= 10'd384) ? h0 - 10'd384 : h0;
+    wire [9:0]  h2 = (h1 >= 10'd192) ? h1 - 10'd192 : h1;
+    wire [7:0]  hue6 = h2[7:0];   
 
-wire abc_on = in_abc                       && font_data[3'd7-abc_px];
-wire wm_on  = in_wm                        && font_data[3'd7-wm_px];
-wire txt_on = in_txt                       && font_data[3'd7-txt_px];
-wire lbl_on = in_note_row && in_label_x   && font_data[3'd7-lbl_px];
+    wire [2:0] sector  = hue6[7:5];
+    wire [7:0] ramp_up = {hue6[4:0], 3'b000};
+    wire [7:0] ramp_dn = 8'd248 - {hue6[4:0], 3'b000};
 
-// ============================================================
-// 12. Final colour
-// ============================================================
-reg [3:0] r_out, g_out, b_out;
-always @(*) begin
-    if (!active)         {r_out,g_out,b_out}=12'h000;
-    else if (abc_on)     {r_out,g_out,b_out}=12'hFF0; // yellow debug
-    else if (wm_on)      {r_out,g_out,b_out}=12'h777;
-    else if (txt_on)     {r_out,g_out,b_out}=12'hFFF;
-    else if (draw_line_on)  {r_out,g_out,b_out}=12'h0FF;
-    else if (draw_line_dim) {r_out,g_out,b_out}=12'h444;
-    else if (lbl_on)     {r_out,g_out,b_out}=key_state[note_idx]?12'hFFF:12'h888;
-    else if (in_grad)    {r_out,g_out,b_out}={r_grad,g_grad,b_grad};
-    else                 {r_out,g_out,b_out}=12'h112;
-end
-assign R=r_out; assign G=g_out; assign B=b_out;
+    reg [7:0] rh, gh, bh;
+    always @(*) begin
+        case (sector)
+            3'd0: begin rh=8'hF8; gh=ramp_up; bh=8'h00; end
+            3'd1: begin rh=ramp_dn; gh=8'hF8; bh=8'h00; end
+            3'd2: begin rh=8'h00; gh=8'hF8; bh=ramp_up; end
+            3'd3: begin rh=8'h00; gh=ramp_dn; bh=8'hF8; end
+            3'd4: begin rh=ramp_up; gh=8'h00; bh=8'hF8; end
+            3'd5: begin rh=8'hF8; gh=8'h00; bh=ramp_dn; end
+            default: begin rh=0; gh=0; bh=0; end
+        endcase
+    end
+
+    // Vertical soft fade alpha
+    wire [8:0] gy_bot  = 9'd159 - gy;
+    wire [8:0] gy_near = (gy < gy_bot) ? gy : gy_bot;
+    wire [3:0] alpha   = (gy_near >= 9'd24) ? 4'hF : gy_near[4:1];
+
+    // Color mixing
+    wire [11:0] rs = {4'b0,rh} * {8'b0,alpha};
+    wire [11:0] gs = {4'b0,gh} * {8'b0,alpha};
+    wire [11:0] bs = {4'b0,bh} * {8'b0,alpha};
+
+    wire [15:0] rd = ({4'b0,rs} * 16'd17) >> 8;
+    wire [15:0] gd = ({4'b0,gs} * 16'd17) >> 8;
+    wire [15:0] bd = ({4'b0,bs} * 16'd17) >> 8;
+
+    wire [3:0] r_grad = rd[7:4];
+    wire [3:0] g_grad = gd[7:4];
+    wire [3:0] b_grad = bd[7:4];
+
+    // ============================================================
+    // 11. Font ROM MUX (Fixed Declaration and Assignment)
+    // ============================================================
+    
+    // IMPORTANT: font_addr must be declared as reg [10:0] (or appropriate width) 
+    // before this always block. Example: reg [10:0] font_addr;
+    // Assuming font_addr is [10:0] = [7:0] ASCII + [2:0] Pixel Row
+    
+   // reg [10:0] font_addr; // <--- MAKE SURE THIS IS DECLARED IN YOUR MODULE
+
+    always @(*) begin
+        if (in_abc)
+            font_addr = {abc_ascii, abc_py};
+        else if (in_wm)
+            font_addr = {wm_ch(wm_ci), wm_py};
+        else if (in_txt)
+            font_addr = {txt_ascii, txt_py};
+        else
+            font_addr = {lbl_ascii, note_lbl_py}; // Ensure note_lbl_py is defined
+    end
+
+    // Font Data Lookup (Assuming font_data is output from your ROM instance)
+    // The bit selection depends on your ROM width. Assuming 8-bit wide ROM, accessing specific bit:
+    // If ROM is 1-bit wide per address, you might need different logic. 
+    // Here assuming font_data is an 8-bit bus representing one row of pixels for the char.
+    
+    wire abc_on = in_abc                       && font_data[7-abc_px];
+    wire wm_on  = in_wm                        && font_data[7-wm_px];
+    wire txt_on = in_txt                       && font_data[7-txt_px];
+    wire lbl_on = in_note_row && in_label_x    && font_data[7-lbl_px];
+
+    // ============================================================
+    // 12. Final colour (Fixed Syntax)
+    // ============================================================
+    reg [3:0] r_out, g_out, b_out;
+    
+    always @(*) begin
+        if (!active) begin
+            r_out = 4'h0; g_out = 4'h0; b_out = 4'h0;
+        end
+        else if (abc_on) begin
+            r_out = 4'hF; g_out = 4'hF; b_out = 4'h0; // Yellow
+        end
+        else if (wm_on) begin
+            r_out = 4'h7; g_out = 4'h7; b_out = 4'h7; // Gray
+        end
+        else if (txt_on) begin
+            r_out = 4'hF; g_out = 4'hF; b_out = 4'hF; // White
+        end
+        else if (draw_line_on) begin
+            r_out = 4'h0; g_out = 4'hF; b_out = 4'hF; // Cyan
+        end
+        else if (draw_line_dim) begin
+            r_out = 4'h4; g_out = 4'h4; b_out = 4'h4; // Dark Gray
+        end
+        else if (lbl_on) begin
+            if (key_state[note_idx]) begin
+                r_out = 4'hF; g_out = 4'hF; b_out = 4'hF; // White
+            end else begin
+                r_out = 4'h8; g_out = 4'h8; b_out = 4'h8; // Light Gray
+            end
+        end
+        else if (in_grad) begin
+            r_out = r_grad;
+            g_out = g_grad;
+            b_out = b_grad;
+        end
+        else begin
+            r_out = 4'h1; g_out = 4'h1; b_out = 4'h2; // Background
+        end
+    end
+
+    assign R = r_out;
+    assign G = g_out;
+    assign B = b_out;
 
 endmodule
