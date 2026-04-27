@@ -77,14 +77,15 @@ generate
             .env_out(env_out)
         );
         
-        wire [3:0] voice_wave [0:MAX_VOICES-1];
+        wire [5:0] voice_wave [0:MAX_VOICES-1];
         genvar wv;
         for (wv = 0; wv < MAX_VOICES; wv = wv + 1) begin : wave_gen
             wire [31:0] ph = phase_acc[wv];
-            wire [3:0] w_square   = ph[31] ? 4'd15 : 4'd0;
-            wire [3:0] w_triangle = ph[31] ? ~ph[30:27] : ph[30:27];
-            wire [3:0] w_saw      = ph[31:28];
-            wire [3:0] w_sine     = w_triangle; // placeholder, LUT-based sine TBD
+            wire [5:0] w_square   = ph[31] ? 6'd63 : 6'd0;
+            wire [5:0] w_triangle = ph[31] ? ~ph[30:25] : ph[30:25];
+            wire [5:0] w_saw      = ph[31:26];
+            wire [5:0] w_sine;
+            sine_lut sine_i (.phase(ph[31:24]), .sine_out(w_sine));
             assign voice_wave[wv] = (waveform_sel == 2'd0) ? w_square   :
                                     (waveform_sel == 2'd1) ? w_triangle :
                                     (waveform_sel == 2'd2) ? w_saw      :
@@ -96,7 +97,7 @@ generate
             voice_sum = 10'd0;
             for (k = 0; k < MAX_VOICES; k = k + 1) begin
                 if (k < voice_count) begin
-                    voice_sum = voice_sum + {6'd0, voice_wave[k]};
+                    voice_sum = voice_sum + {4'd0, voice_wave[k]};
                 end
             end
         end

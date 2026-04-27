@@ -96,7 +96,7 @@ always @(posedge clk or posedge rst) begin
         reg_ctrl <= {5'b0, 4'd7, 4'd4,  4'd8,  14'd0};
         //               A       D       S       R
         reg_adsr <= {8'd20, 8'd100, 8'd255, 8'd100};
-        reg_filt <= 5'd0;
+        reg_filt <= 5'd16;  // bypass by default, let harmonics through
     end else if (reg_we) begin
         case (reg_addr)
             ADDR_CTRL: reg_ctrl <= {reg_ctrl[31:14],reg_wdata[13:0]};
