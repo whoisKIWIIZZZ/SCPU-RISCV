@@ -107,8 +107,8 @@ generate
         //             $display("Time: %t | Slot 0 Env: %d | Sum: %d | voice_count:%d|phase_acc:%h", $time, env_out, voice_sum,env_gen.env_acc,phase_acc[0]);
         //     end
         // end
-        wire [23:0] prod = {voice_sum, 6'd0} * {9'd0, env_out};
-        assign voice_out = prod[22:13];
+        wire [23:0] prod = {voice_sum, 3'd0} * {9'd0, env_out};
+        assign voice_out = prod[19:10];
         assign slot_outs[i] = voice_out;
     end
 endgenerate
@@ -123,7 +123,7 @@ always @(*) begin
 end
 
 wire [22:0] mix_scaled = mix_sum * {10'b0, volume, 3'b0};
-wire [9:0] vca_out = mix_scaled[22:13];
+wire [9:0] vca_out = mix_scaled[17:8];
 
 lpf filter_inst (
     .clk(clk),
