@@ -19,6 +19,7 @@ module audio #(
     input [3:0] volume,
     input [3:0] unison,
     input [3:0] detune,
+    input [1:0] waveform_sel,
 
     output [9:0] mix_out
 );
@@ -76,18 +77,37 @@ generate
             .env_out(env_out)
         );
         
+        wire [3:0] voice_wave [0:MAX_VOICES-1];
+        genvar wv;
+        for (wv = 0; wv < MAX_VOICES; wv = wv + 1) begin : wave_gen
+            wire [31:0] ph = phase_acc[wv];
+            wire [3:0] w_square   = ph[31] ? 4'd15 : 4'd0;
+            wire [3:0] w_triangle = ph[31] ? ~ph[30:27] : ph[30:27];
+            wire [3:0] w_saw      = ph[31:28];
+            wire [3:0] w_sine     = w_triangle; // placeholder, LUT-based sine TBD
+            assign voice_wave[wv] = (waveform_sel == 2'd0) ? w_square   :
+                                    (waveform_sel == 2'd1) ? w_triangle :
+                                    (waveform_sel == 2'd2) ? w_saw      :
+                                                              w_sine;
+        end
+
         integer k;
         always @(*) begin
             voice_sum = 10'd0;
             for (k = 0; k < MAX_VOICES; k = k + 1) begin
                 if (k < voice_count) begin
-                    voice_sum = voice_sum + (phase_acc[k][31] ? 10'd1 : 10'd0);
+                    voice_sum = voice_sum + {6'd0, voice_wave[k]};
                 end
             end
         end
-        
-        wire [16:0] prod = {voice_sum, 6'd0} * {9'd0, env_out};
-        assign voice_out = prod[15:6];
+        // if (i == 0) begin
+        //     always @(posedge clk) begin
+        //         if (slot_gates[i])
+        //             $display("Time: %t | Slot 0 Env: %d | Sum: %d | voice_count:%d|phase_acc:%h", $time, env_out, voice_sum,env_gen.env_acc,phase_acc[0]);
+        //     end
+        // end
+        wire [23:0] prod = {voice_sum, 6'd0} * {9'd0, env_out};
+        assign voice_out = prod[22:13];
         assign slot_outs[i] = voice_out;
     end
 endgenerate
