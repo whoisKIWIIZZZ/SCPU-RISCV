@@ -125,10 +125,17 @@ end
 wire [22:0] mix_scaled = mix_sum * {10'b0, volume, 3'b0};
 wire [9:0] vca_out = mix_scaled[17:8];
 
+// Pipeline register: break long combinational path, deliver clean data to LPF
+reg [9:0] vca_out_reg;
+always @(posedge clk or posedge rst) begin
+    if (rst) vca_out_reg <= 10'd0;
+    else     vca_out_reg <= vca_out;
+end
+
 lpf filter_inst (
     .clk(clk),
     .rst(rst),
-    .audio_in(vca_out),
+    .audio_in(vca_out_reg),
     .cutoff_val(filter_cutoff),
     .audio_out(mix_out)
 );
