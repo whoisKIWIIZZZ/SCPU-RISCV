@@ -97,7 +97,7 @@ reg [31:0] reg_piano; // piano parameters
 
 always @(posedge clk or posedge rst) begin
     if (rst) begin
-        //                   wf   detune  unison  volume  key_bitmap
+        //               wf     detune  unison  volume  key_bitmap
         reg_ctrl  <= {3'b0, 3'd0,  4'd7,  4'd4,  4'd8,  14'd0};
         //               A       D       S       R
         reg_adsr  <= {8'd20, 8'd100, 8'd255, 8'd100};
