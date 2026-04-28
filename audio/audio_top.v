@@ -11,7 +11,8 @@ module audio_top (
 
     wire rst = ~rstn;
     wire btn_play;
-    wire [1:0] sw_unison, sw_detune, sw_env_type, sw_filter, sw_waveform;
+    wire [1:0] sw_unison, sw_detune, sw_env_type, sw_filter;
+    wire [2:0] sw_waveform;
     assign btn_play = sw_i[15];
     wire [3:0] sw_note;
     assign  sw_note = sw_i[3:0];
@@ -19,10 +20,7 @@ module audio_top (
     assign  sw_detune = sw_i[7:6];
     assign  sw_env_type = sw_i[9:8];
     assign  sw_filter   = sw_i[11:10];
-    assign  sw_waveform = {1'b0, sw_i[12]};
-    wire volume_up, volume_down;
-    assign volume_up = sw_i[13];
-    assign volume_down = sw_i[14];
+    assign  sw_waveform = {sw_i[14], sw_i[13], sw_i[12]};
     reg [31:0] target_step;
     reg [3:0]  unison_val;
     reg [3:0]  detune_val;
@@ -151,7 +149,11 @@ module audio_top (
         .mix_out(mix_out),
         .unison(unison_val),
         .detune(detune_val),
-        .waveform_sel(sw_waveform)
+        .waveform_sel(sw_waveform),
+        .piano_attack(8'd128),
+        .piano_body(8'd200),
+        .piano_tail(8'd16),
+        .piano_noise(8'd128)
     );
 
     reg [9:0] pwm_cnt;

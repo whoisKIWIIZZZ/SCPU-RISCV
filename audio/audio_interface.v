@@ -1,42 +1,48 @@
 `timescale 1ns / 1ps
 
 // =============================================================================
-// audio_interface.v  —  简化寄存器接口版本
+// audio_interface.v  —  Simplified register interface
 // =============================================================================
 //
-// CPU 只需写两个寄存器地址：
-// 0000000000001
-//  地址 0x00  [主控字]
-// 0000 
-//  ┌──────┬──────────┬────────┬────────┬────────┬────────────────┐
-//  │ 31:28│  27:26   │ 25:22  │ 21:18  │ 17:14  │    13:0        │
-//  │ (保留)│waveform  │ detune │ unison │ volume │  key_bitmap    │
-//  └──────┴──────────┴────────┴────────┴────────┴────────────────┘
-//    waveform: 00=square, 01=triangle, 10=sawtooth, 11=sine(预留)
-//    key_bitmap: bit i = 1 表示第 i 个半音被按下
-//      bit 0 = C4,  bit 1 = C#4, bit 2 = D4,  bit 3 = D#4,
-//      bit 4 = E4,  bit 5 = F4,  bit 6 = F#4, bit 7 = G4,
-//      bit 8 = G#4, bit 9 = A4,  bit10 = A#4, bit11 = B4,
-//      bit12 = C5,  bit13 = (保留)
-//    volume:  4bit，0~15（默认8）
-//    unison:  4bit，同时发音的voice数，1~8（默认4）
-//    detune:  4bit，detune偏移量（默认7）
+// CPU writes to 4 register addresses:
 //
-//  地址 0x01  [ADSR字]
+//  Address 0x00  [Main control word]
+//  ┌──────┬──────────┬────────┬────────┬────────┬────────────────┐
+//  │ 31:29│  28:26   │ 25:22  │ 21:18  │ 17:14  │    13:0        │
+//  │ (res)│waveform  │ detune │ unison │ volume │  key_bitmap    │
+//  └──────┴──────────┴────────┴────────┴────────┴────────────────┘
+//    waveform: 000=square, 001=triangle, 010=sawtooth, 011=sine, 100=piano
+//    key_bitmap: bit i = 1 means note i is pressed
+//      bit 0=C4, 1=C#4, 2=D4, 3=D#4, 4=E4, 5=F4, 6=F#4, 7=G4
+//      bit 8=G#4, 9=A4, 10=A#4, 11=B4, 12=C5, 13=(reserved)
+//    volume: 4-bit 0-15 (default 8)
+//    unison: 4-bit voice count 1-8 (default 4)
+//    detune: 4-bit detune offset (default 7)
+//
+//  Address 0x01  [ADSR word]
 //  ┌──────────┬──────────┬──────────┬──────────┐
 //  │  31:24   │  23:16   │  15:8    │   7:0    │
 //  │  attack  │  decay   │ sustain  │ release  │
 //  └──────────┴──────────┴──────────┴──────────┘
-//    每段 8bit（0~255），内部线性映射到 adsr 模块所需的 16bit 步进值/电平。
-//    attack/decay/release: 值越大速度越快（步进 = val * 256）
-//    sustain: 0=静音，255=全音量保持（电平 = val * 256）
-//    默认值：A=20(~250ms), D=100, S=255(全保持), R=100
+//    attack/decay/release: larger = faster (step = val * 256)
+//    sustain: 0=mute, 255=full volume (level = val * 256)
+//    defaults: A=20, D=100, S=255, R=100
 //
-//  地址 0x02  [filter字]（可选，不写则用默认值）
+//  Address 0x02  [Filter word]
 //  ┌──────────────────────────┬──────┐
 //  │          31:5            │  4:0 │
-//  │          (保留)           │cutoff│
+//  │          (reserved)      │cutoff│
 //  └──────────────────────────┴──────┘
+//
+//  Address 0x03  [Piano word]
+//  ┌──────────┬──────────┬──────────┬──────────┐
+//  │  31:24   │  23:16   │  15:8    │   7:0    │
+//  │  attack  │  body    │  tail    │  noise   │
+//  └──────────┴──────────┴──────────┴──────────┘
+//    attack: crossfade step per ms (default 128 = ~2ms)
+//    body:   body hold time in ms (default 200)
+//    tail:   decay step per ms (default 16 = ~16ms tail)
+//    noise:  noise level during attack (default 128)
 //
 // =============================================================================
 
@@ -44,29 +50,27 @@ module audio_interface (
     input clk,
     input rst,
 
-    // CPU接口（简化为3个地址）
+    // CPU interface
     input        reg_we,
     input  [7:0] reg_addr,
     input [31:0] reg_wdata,
 
-    // 音频输出
+    // Audio output
     output AUD_PWM,
     output AUD_SD
 );
 
 // ---------------------------------------------------------------------------
-// 地址常量
+// Address constants
 // ---------------------------------------------------------------------------
-localparam ADDR_CTRL  = 8'h00;   // 主控字：key_bitmap + volume + unison + detune
-localparam ADDR_ADSR  = 8'h01;   // ADSR 打包字
+localparam ADDR_CTRL  = 8'h00;   // main control: key_bitmap + volume + unison + detune + waveform
+localparam ADDR_ADSR  = 8'h01;   // ADSR packed word
 localparam ADDR_FILT  = 8'h02;   // filter cutoff
+localparam ADDR_PIANO = 8'h03;   // piano parameters
 
 // ---------------------------------------------------------------------------
-// C4 ~ C5 的频率步进值（32位相位累加器，时钟 100MHz，2^32/100MHz * f）
+// C4-C5 frequency step values (32-bit phase accumulator, 100MHz clock)
 // phase_step = round(f * 2^32 / 100_000_000)
-// C4=261.63, C#4=277.18, D4=293.66, D#4=311.13, E4=329.63
-// F4=349.23, F#4=369.99, G4=392.00, G#4=415.30, A4=440.00
-// A#4=466.16, B4=493.88, C5=523.25
 // ---------------------------------------------------------------------------
 wire [31:0] NOTE_FREQ [0:12];
 assign NOTE_FREQ[ 0] = 32'd11239; // C4   261.63 Hz
@@ -84,40 +88,44 @@ assign NOTE_FREQ[11] = 32'd21234; // B4   493.88 Hz
 assign NOTE_FREQ[12] = 32'd22478; // C5   523.25 Hz
 
 // ---------------------------------------------------------------------------
-// 寄存器
+// Registers
 // ---------------------------------------------------------------------------
-reg [31:0] reg_ctrl; // 主控字
-reg [31:0] reg_adsr; // ADSR字
-reg [4:0]  reg_filt; // filter cutoff
+reg [31:0] reg_ctrl;  // main control word
+reg [31:0] reg_adsr;  // ADSR word
+reg [4:0]  reg_filt;  // filter cutoff
+reg [31:0] reg_piano; // piano parameters
 
 always @(posedge clk or posedge rst) begin
     if (rst) begin
-        //               detune  unison  volume  key_bitmap
-        reg_ctrl <= {5'b0, 4'd7, 4'd4,  4'd8,  14'd0};
+        //               wf     detune  unison  volume  key_bitmap
+        reg_ctrl  <= {3'b0, 3'd0,  4'd7,  4'd4,  4'd8,  14'd0};
         //               A       D       S       R
-        reg_adsr <= {8'd20, 8'd100, 8'd255, 8'd100};
-        reg_filt <= 5'd16;  // bypass by default, let harmonics through
+        reg_adsr  <= {8'd20, 8'd100, 8'd255, 8'd100};
+        reg_filt  <= 5'd16;  // bypass by default
+        //               attack  body    tail    noise
+        reg_piano <= {8'd128, 8'd200, 8'd16,  8'd128};
     end else if (reg_we) begin
         case (reg_addr)
-            ADDR_CTRL: reg_ctrl <= {reg_ctrl[31:14],reg_wdata[13:0]};
-            ADDR_ADSR: reg_adsr <= reg_wdata;
-            ADDR_FILT: reg_filt <= reg_wdata[4:0];
+            ADDR_CTRL:  reg_ctrl  <= reg_wdata;
+            ADDR_ADSR:  reg_adsr  <= reg_wdata;
+            ADDR_FILT:  reg_filt  <= reg_wdata[4:0];
+            ADDR_PIANO: reg_piano <= reg_wdata;
             default: ;
         endcase
     end
 end
 
 // ---------------------------------------------------------------------------
-// 解包主控字
+// Unpack main control word
 // ---------------------------------------------------------------------------
 wire [13:0] key_bitmap   = reg_ctrl[13:0];
 wire [3:0]  volume       = reg_ctrl[17:14];
 wire [3:0]  unison       = reg_ctrl[21:18];
 wire [3:0]  detune       = reg_ctrl[25:22];
-wire [1:0]  waveform_sel = reg_ctrl[27:26];
+wire [2:0]  waveform_sel = reg_ctrl[28:26];
 
 // ---------------------------------------------------------------------------
-// 解包 ADSR（8bit -> 16bit：步进 = val*256，sustain电平 = val*256）
+// Unpack ADSR (8-bit to 16-bit: step = val * 256, sustain level = val * 256)
 // ---------------------------------------------------------------------------
 wire [15:0] env_a = {reg_adsr[31:24], 8'd0}; // attack_step
 wire [15:0] env_d = {reg_adsr[23:16], 8'd0}; // decay_step
@@ -125,19 +133,23 @@ wire [15:0] env_s = {reg_adsr[15: 8], 8'd0}; // sustain_lvl
 wire [15:0] env_r = {reg_adsr[ 7: 0], 8'd0}; // release_step
 
 // ---------------------------------------------------------------------------
-// 将 key_bitmap 映射为 slot_gates 和 slot_freqs
-// 最多 8 个 slot，按 key_bitmap 低位到高位依次分配给活跃的音符
+// Unpack piano parameters (8-bit each)
 // ---------------------------------------------------------------------------
-// 第一步：找出所有被按下的音符，依次填入 slot
-// （组合逻辑，Verilog 中用 for 循环实现优先级编码器）
+wire [7:0] piano_attack = reg_piano[31:24];
+wire [7:0] piano_body   = reg_piano[23:16];
+wire [7:0] piano_tail   = reg_piano[15: 8];
+wire [7:0] piano_noise  = reg_piano[ 7: 0];
 
-reg [3:0]  slot_note [0:7];   // 每个slot对应哪个音符(0~12)
-reg        slot_gate_r [0:7]; // 每个slot是否激活
+// ---------------------------------------------------------------------------
+// Map key_bitmap to slot_gates and slot_freqs
+// Up to 8 slots, assigned in order of key_bitmap low-to-high bits
+// ---------------------------------------------------------------------------
+reg [3:0]  slot_note [0:7];
+reg        slot_gate_r [0:7];
 integer    si, ni;
 
 always @(*) begin
-    // 初始化
-    for (si = 0; si < 13; si = si + 1) begin
+    for (si = 0; si < 8; si = si + 1) begin
         slot_gate_r[si] = 1'b0;
         slot_note[si]   = 4'd0;
     end
@@ -151,7 +163,7 @@ always @(*) begin
     end
 end
 
-// 拼成audio核心需要的打包格式
+// Pack into audio core format
 wire [7:0] slot_gates;
 wire [255:0] slot_freqs;
 
@@ -164,30 +176,34 @@ generate
 endgenerate
 
 // ---------------------------------------------------------------------------
-// 例化 audio 核心
+// Audio core instantiation
 // ---------------------------------------------------------------------------
 wire [9:0] mix_out;
 audio #(
     .MAX_SLOTS(8)
 ) synth_core (
-    .clk         (clk),
-    .rst         (rst),
-    .slot_gates  (slot_gates),
-    .slot_freqs  (slot_freqs),
-    .env_a       (env_a),
-    .env_d       (env_d),
-    .env_s       (env_s),
-    .env_r       (env_r),
+    .clk          (clk),
+    .rst          (rst),
+    .slot_gates   (slot_gates),
+    .slot_freqs   (slot_freqs),
+    .env_a        (env_a),
+    .env_d        (env_d),
+    .env_s        (env_s),
+    .env_r        (env_r),
     .filter_cutoff(reg_filt),
-    .volume      (volume),
-    .unison      (unison),
+    .volume       (volume),
+    .unison       (unison),
     .detune       (detune),
     .waveform_sel (waveform_sel),
+    .piano_attack (piano_attack),
+    .piano_body   (piano_body),
+    .piano_tail   (piano_tail),
+    .piano_noise  (piano_noise),
     .mix_out      (mix_out)
 );
 
 // ---------------------------------------------------------------------------
-// PWM 输出
+// PWM output
 // ---------------------------------------------------------------------------
 reg [9:0] pwm_cnt;
 always @(posedge clk or posedge rst) begin
