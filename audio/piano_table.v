@@ -3,8 +3,8 @@
 // =============================================================================
 // piano_table.v — 3-wavetable piano ROM (per-voice distributed RAM)
 // =============================================================================
-//   3 tables × 256 entries × 10-bit = 7680 bits per instance
-//   table_sel: 0=attack, 1=body, 2=tail, 3=attack (unused)
+//   4 slots × 256 entries × 10-bit = 10240 bits per instance (slot 3 = attack copy)
+//   table_sel: 0=attack, 1=body, 2=tail, 3=attack (safety clamp)
 //   Simultaneous dual read for crossfade: sample_a + sample_b
 // =============================================================================
 
@@ -16,10 +16,13 @@ module piano_table (
     output [9:0] sample_b
 );
 
-    reg [9:0] lut [0:767];       // 3 × 256 entries
+    reg [9:0] lut [0:1023];      // 4 × 256 entries (slot 3 = attack copy, safety)
 
-    wire [9:0] addr_a = {table_sel_a, phase};
-    wire [9:0] addr_b = {table_sel_b, phase};
+    // clamp table_sel to avoid out-of-bounds if sel=3 is ever driven
+    wire [1:0] ts_a = (table_sel_a == 2'd3) ? 2'd0 : table_sel_a;
+    wire [1:0] ts_b = (table_sel_b == 2'd3) ? 2'd0 : table_sel_b;
+    wire [9:0] addr_a = {ts_a, phase};
+    wire [9:0] addr_b = {ts_b, phase};
 
     assign sample_a = lut[addr_a];
     assign sample_b = lut[addr_b];
@@ -224,6 +227,10 @@ module piano_table (
         lut[756]=10'd 306;lut[757]=10'd 322;lut[758]=10'd 339;lut[759]=10'd 355;
         lut[760]=10'd 372;lut[761]=10'd 389;lut[762]=10'd 406;lut[763]=10'd 424;
         lut[764]=10'd 441;lut[765]=10'd 459;lut[766]=10'd 477;lut[767]=10'd 495;
+
+        // Duplicate attack table to slot 3 (addr 768-1023) as safety guard
+        for (i = 0; i < 256; i = i + 1)
+            lut[768 + i] = lut[i];
     end
 
 endmodule

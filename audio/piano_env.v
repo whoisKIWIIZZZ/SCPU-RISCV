@@ -127,37 +127,48 @@ module piano_env (
                 end
 
                 BODY: begin
-                    // hold at full volume, 100% body table
-                    cf_acc  <= 16'hFF00;
-                    env_acc <= 16'hFF00;
-                    if (body_cnt >= body_max) begin
-                        if (tail_rate == 8'd0) begin
-                            // instant tail: return to idle
-                            state   <= IDLE;
-                            env_acc <= 16'd0;
-                        end else begin
-                            state <= TAIL;
-                            cf_acc <= 16'd0;       // reset for body→tail crossfade
-                        end
+                    if (gate_rise) begin
+                        state    <= ATTACK;
+                        cf_acc   <= 16'd0;
+                        env_acc  <= 16'hFF00;
                     end else begin
-                        body_cnt <= body_cnt + 16'd1;
+                        // hold at full volume, 100% body table
+                        cf_acc  <= 16'hFF00;
+                        env_acc <= 16'hFF00;
+                        if (body_cnt >= body_max) begin
+                            if (tail_rate == 8'd0) begin
+                                state   <= IDLE;
+                                env_acc <= 16'd0;
+                            end else begin
+                                state <= TAIL;
+                                cf_acc <= 16'd0;
+                            end
+                        end else begin
+                            body_cnt <= body_cnt + 16'd1;
+                        end
                     end
                 end
 
                 TAIL: begin
-                    // crossfade body→tail (cf_acc 0→255)
-                    // volume decay (env_acc 255→0)
-                    if (cf_acc >= 16'hFF00 - tail_step) begin
-                        cf_acc  <= 16'hFF00;
+                    if (gate_rise) begin
+                        state    <= ATTACK;
+                        cf_acc   <= 16'd0;
+                        env_acc  <= 16'hFF00;
                     end else begin
-                        cf_acc <= cf_acc + tail_step;
-                    end
+                        // crossfade body→tail (cf_acc 0→255)
+                        // volume decay (env_acc 255→0)
+                        if (cf_acc >= 16'hFF00 - tail_step) begin
+                            cf_acc  <= 16'hFF00;
+                        end else begin
+                            cf_acc <= cf_acc + tail_step;
+                        end
 
-                    if (env_acc <= tail_step) begin
-                        env_acc <= 16'd0;
-                        state   <= IDLE;
-                    end else begin
-                        env_acc <= env_acc - tail_step;
+                        if (env_acc <= tail_step) begin
+                            env_acc <= 16'd0;
+                            state   <= IDLE;
+                        end else begin
+                            env_acc <= env_acc - tail_step;
+                        end
                     end
                 end
             endcase

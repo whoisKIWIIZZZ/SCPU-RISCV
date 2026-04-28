@@ -241,31 +241,31 @@ generate
     end
 endgenerate
 
-wire p_cycle_end = (p_tdm == TDM_MAX - 1);
+wire p_cycle_start = (p_tdm == 0);
 
 integer pa_s;
 always @(posedge clk or posedge rst) begin
     if (rst) begin
         for (pa_s = 0; pa_s < MAX_SLOTS; pa_s = pa_s + 1) begin
-            p_accum[pa_s] = 14'd0;
+            p_accum[pa_s]        <= 14'd0;
             piano_slot_out[pa_s] <= 10'd0;
         end
     end else begin
-        // accumulate current voice (blocking so envelope latch sees final sum)
-        if (slot_gates[tdm_slot] && tdm_voice < unison)
-            p_accum[tdm_slot] = p_accum[tdm_slot] + {4'd0, voice_sample[9:0]};
-
-        if (p_cycle_end) begin
-            // latch result with envelope: piano_out = p_accum * pe_env >> 11
+        if (p_cycle_start) begin
+            // Latch previous round's accumulation (p_accum has full 64-voice sum)
             for (pa_s = 0; pa_s < MAX_SLOTS; pa_s = pa_s + 1) begin
-                if (slot_gates[pa_s] && unison > 0) begin
-                    piano_slot_out[pa_s] <= (p_env_prod[pa_s][21:10] > 10'd1023)
-                        ? 10'd1023 : p_env_prod[pa_s][20:11];
-                end else begin
+                if (slot_gates[pa_s] && unison > 0)
+                    piano_slot_out[pa_s] <= p_env_prod[pa_s][20:11];
+                else
                     piano_slot_out[pa_s] <= 10'd0;
-                end
-                p_accum[pa_s] = 14'd0;
+                p_accum[pa_s] <= 14'd0;
             end
+            // Seed slot 0 voice 0 (overrides p_accum[0] reset above; NB last-wins)
+            if (slot_gates[0] && unison > 0)
+                p_accum[0] <= {4'd0, voice_sample[9:0]};
+        end else begin
+            if (slot_gates[tdm_slot] && tdm_voice < unison)
+                p_accum[tdm_slot] <= p_accum[tdm_slot] + {4'd0, voice_sample[9:0]};
         end
     end
 end
@@ -293,7 +293,7 @@ always @(*) begin
 end
 
 wire [22:0] mix_scaled = mix_sum * {10'b0, volume, 3'b0};
-wire [9:0] vca_out = mix_scaled[17:8];
+wire [9:0] vca_out = (|mix_scaled[22:18]) ? 10'd1023 : mix_scaled[17:8];
 
 reg [9:0] vca_out_reg;
 always @(posedge clk or posedge rst) begin
