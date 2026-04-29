@@ -28,6 +28,13 @@ wire [31:0] counter_out;
     wire audio_we;
     wire [31:0] audio_in;
     wire [7:0] audio_addr;
+    wire [2:0] mon_waveform;
+    wire [3:0] mon_volume;
+    wire [3:0] mon_unison;
+    wire [3:0] mon_detune;
+    wire [4:0] mon_filter;
+    wire [4:0] mon_root;
+
     audio_interface U_AUDIO_INTERFACE(
         .clk(clk),
         .rst(~rstn),
@@ -35,7 +42,13 @@ wire [31:0] counter_out;
         .reg_addr(audio_addr),
         .reg_wdata(audio_in),
         .AUD_PWM(AUD_PWM),
-        .AUD_SD(AUD_SD)
+        .AUD_SD(AUD_SD),
+        .mon_waveform(mon_waveform),
+        .mon_volume  (mon_volume),
+        .mon_unison  (mon_unison),
+        .mon_detune  (mon_detune),
+        .mon_filter  (mon_filter),
+        .mon_root    (mon_root)
     );
 
 
@@ -242,7 +255,13 @@ wire [31:0] ps2_scancode;
         .VSYNC    (VGA_VSYNC),
         .R        (VGA_R),
         .G        (VGA_G),
-        .B        (VGA_B)
+        .B        (VGA_B),
+        .mon_waveform(mon_waveform),
+        .mon_volume  (mon_volume),
+        .mon_unison  (mon_unison),
+        .mon_detune  (mon_detune),
+        .mon_filter  (mon_filter),
+        .mon_root    (mon_root)
     );
 
 

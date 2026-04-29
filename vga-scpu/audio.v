@@ -234,10 +234,12 @@ reg [9:0]  piano_slot_out [0:MAX_SLOTS-1];
 
 // combinational envelope scaling (used by latch logic below)
 wire [21:0] p_env_prod [0:MAX_SLOTS-1];
+wire [9:0]  p_slot_sat [0:MAX_SLOTS-1];
 genvar eps;
 generate
     for (eps = 0; eps < MAX_SLOTS; eps = eps + 1) begin : env_scale_gen
         assign p_env_prod[eps] = {8'd0, p_accum[eps]} * {14'd0, pe_env[eps]};
+        assign p_slot_sat[eps] = (p_env_prod[eps] >= 22'h200000) ? 10'd1023 : p_env_prod[eps][20:11];
     end
 endgenerate
 
@@ -255,7 +257,7 @@ always @(posedge clk or posedge rst) begin
             // Latch previous round's accumulation (p_accum has full 64-voice sum)
             for (pa_s = 0; pa_s < MAX_SLOTS; pa_s = pa_s + 1) begin
                 if (slot_gates[pa_s] && unison > 0)
-                    piano_slot_out[pa_s] <= p_env_prod[pa_s][20:11];
+                    piano_slot_out[pa_s] <= p_slot_sat[pa_s];
                 else
                     piano_slot_out[pa_s] <= 10'd0;
                 p_accum[pa_s] <= 14'd0;
@@ -293,7 +295,7 @@ always @(*) begin
 end
 
 wire [22:0] mix_scaled = mix_sum * {10'b0, volume, 3'b0};
-wire [9:0] vca_out = (|mix_scaled[22:18]) ? 10'd1023 : mix_scaled[17:8];
+wire [9:0] vca_out = (|mix_scaled[22:19]) ? 10'd1023 : mix_scaled[18:9];
 
 reg [9:0] vca_out_reg;
 always @(posedge clk or posedge rst) begin

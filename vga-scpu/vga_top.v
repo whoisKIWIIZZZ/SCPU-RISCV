@@ -34,7 +34,15 @@ module VGA_top(
     output [3:0]  R,
     output [3:0]  G,
     output [3:0]  B,
-    output        pixel_clk
+    output        pixel_clk,
+
+    // Monitor inputs from audio_interface
+    input [2:0]  mon_waveform,
+    input [3:0]  mon_volume,
+    input [3:0]  mon_unison,
+    input [3:0]  mon_detune,
+    input [4:0]  mon_filter,
+    input [4:0]  mon_root
 );
 
 // ============================================================
@@ -148,35 +156,147 @@ wire [4:0] txt_ccol = tx[7:3];
 wire [2:0] txt_py   = ty[2:0];
 wire [2:0] txt_px   = tx[2:0];
 
+    // ---- value-to-ASCII helpers ----
+    function [7:0] digit_ch;
+        input [3:0] v;
+        begin
+            case (v)
+                4'd0: digit_ch = "0"; 4'd1: digit_ch = "1";
+                4'd2: digit_ch = "2"; 4'd3: digit_ch = "3";
+                4'd4: digit_ch = "4"; 4'd5: digit_ch = "5";
+                4'd6: digit_ch = "6"; 4'd7: digit_ch = "7";
+                4'd8: digit_ch = "8"; 4'd9: digit_ch = "9";
+                default: digit_ch = "?";
+            endcase
+        end
+    endfunction
+
+    function [7:0] ones_31;
+        input [4:0] v;
+        reg [4:0] r;
+        begin
+            if      (v >= 5'd30) r = v - 5'd30;
+            else if (v >= 5'd20) r = v - 5'd20;
+            else if (v >= 5'd10) r = v - 5'd10;
+            else                 r = v;
+            ones_31 = digit_ch(r[3:0]);
+        end
+    endfunction
+
+    function [7:0] tens_31;
+        input [4:0] v;
+        begin
+            if      (v >= 5'd30) tens_31 = "3";
+            else if (v >= 5'd20) tens_31 = "2";
+            else if (v >= 5'd10) tens_31 = "1";
+            else                 tens_31 = " ";
+        end
+    endfunction
+
+    function [7:0] note_letter;
+        input [4:0] idx;
+        begin
+            case (idx[2:0])
+                3'd0: note_letter = "C"; 3'd1: note_letter = "D";
+                3'd2: note_letter = "E"; 3'd3: note_letter = "F";
+                3'd4: note_letter = "G"; 3'd5: note_letter = "A";
+                3'd6: note_letter = "B";
+                default: note_letter = "?";
+            endcase
+        end
+    endfunction
+
+    function [7:0] note_octave;
+        input [4:0] idx;
+        begin
+            if      (idx < 5'd7)  note_octave = "4";
+            else if (idx < 5'd14) note_octave = "5";
+            else                  note_octave = "6";
+        end
+    endfunction
+
 reg [7:0] txt_ascii;
 always @(*) begin
     txt_ascii = 8'h20;
     case (txt_crow)
+        // ---- row 0: UNION ----
         3'd0: case (txt_ccol)
             5'd0:txt_ascii="U"; 5'd1:txt_ascii="N"; 5'd2:txt_ascii="I";
             5'd3:txt_ascii="O"; 5'd4:txt_ascii="N"; 5'd9:txt_ascii=":";
+            5'd10: txt_ascii = digit_ch(mon_unison);
             default:txt_ascii=" ";
         endcase
+        // ---- row 1: DETUNE ----
         3'd1: case (txt_ccol)
             5'd0:txt_ascii="D"; 5'd1:txt_ascii="E"; 5'd2:txt_ascii="T";
             5'd3:txt_ascii="U"; 5'd4:txt_ascii="N"; 5'd5:txt_ascii="E";
-            5'd9:txt_ascii=":"; default:txt_ascii=" ";
+            5'd9:txt_ascii=":";
+            5'd10: txt_ascii = tens_31({1'b0, mon_detune});
+            5'd11: txt_ascii = ones_31({1'b0, mon_detune});
+            default:txt_ascii=" ";
         endcase
+        // ---- row 2: LOUDNESS ----
         3'd2: case (txt_ccol)
             5'd0:txt_ascii="L"; 5'd1:txt_ascii="O"; 5'd2:txt_ascii="U";
             5'd3:txt_ascii="D"; 5'd4:txt_ascii="N"; 5'd5:txt_ascii="E";
             5'd6:txt_ascii="S"; 5'd7:txt_ascii="S"; 5'd9:txt_ascii=":";
+            5'd10: txt_ascii = tens_31({1'b0, mon_volume});
+            5'd11: txt_ascii = ones_31({1'b0, mon_volume});
             default:txt_ascii=" ";
         endcase
+        // ---- row 3: WAVETABLE (name) ----
         3'd3: case (txt_ccol)
             5'd0:txt_ascii="W"; 5'd1:txt_ascii="A"; 5'd2:txt_ascii="V";
             5'd3:txt_ascii="E"; 5'd4:txt_ascii="T"; 5'd5:txt_ascii="A";
             5'd6:txt_ascii="B"; 5'd7:txt_ascii="L"; 5'd8:txt_ascii="E";
-            5'd9:txt_ascii=":"; default:txt_ascii=" ";
+            5'd9:txt_ascii=":";
+            5'd10: case (mon_waveform)
+                3'd0: txt_ascii="S"; 3'd1: txt_ascii="T";
+                3'd2: txt_ascii="S"; 3'd3: txt_ascii="S";
+                3'd4: txt_ascii="P";
+                default: txt_ascii=" ";
+            endcase
+            5'd11: case (mon_waveform)
+                3'd0: txt_ascii="Q"; 3'd1: txt_ascii="R";
+                3'd2: txt_ascii="A"; 3'd3: txt_ascii="I";
+                3'd4: txt_ascii="I";
+                default: txt_ascii=" ";
+            endcase
+            5'd12: case (mon_waveform)
+                3'd0: txt_ascii="U"; 3'd1: txt_ascii="I";
+                3'd2: txt_ascii="W"; 3'd3: txt_ascii="N";
+                3'd4: txt_ascii="A";
+                default: txt_ascii=" ";
+            endcase
+            5'd13: case (mon_waveform)
+                3'd0: txt_ascii="A"; 3'd1: txt_ascii=" ";
+                3'd2: txt_ascii=" "; 3'd3: txt_ascii="E";
+                3'd4: txt_ascii="N";
+                default: txt_ascii=" ";
+            endcase
+            5'd14: case (mon_waveform)
+                3'd0: txt_ascii="R"; 3'd1: txt_ascii=" ";
+                3'd2: txt_ascii=" "; 3'd3: txt_ascii=" ";
+                3'd4: txt_ascii="O";
+                default: txt_ascii=" ";
+            endcase
+            5'd15: case (mon_waveform)
+                3'd0: txt_ascii="E"; 3'd1: txt_ascii=" ";
+                3'd2: txt_ascii=" "; 3'd3: txt_ascii=" ";
+                3'd4: txt_ascii=" ";
+                default: txt_ascii=" ";
+            endcase
+            default:txt_ascii=" ";
         endcase
+        // ---- row 4: ROOT + FILTER ----
         3'd4: case (txt_ccol)
             5'd0:txt_ascii="R"; 5'd1:txt_ascii="O"; 5'd2:txt_ascii="O";
-            5'd3:txt_ascii="T"; 5'd9:txt_ascii=":"; 5'd11:txt_ascii="C";
+            5'd3:txt_ascii="T"; 5'd9:txt_ascii=":";
+            5'd10: txt_ascii = note_letter(mon_root);
+            5'd11: txt_ascii = note_octave(mon_root);
+            5'd13: txt_ascii = "F";  5'd14: txt_ascii = ":";
+            5'd15: txt_ascii = tens_31(mon_filter);
+            5'd16: txt_ascii = ones_31(mon_filter);
             default:txt_ascii=" ";
         endcase
         default: txt_ascii=" ";

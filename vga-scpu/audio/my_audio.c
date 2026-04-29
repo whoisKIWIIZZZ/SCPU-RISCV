@@ -10,37 +10,114 @@ void Entry()
     DeadLoop:goto DeadLoop;
 }
 
-// ---- Hardware addresses ----
+// =============================================================================
+// Memory-mapped I/O addresses
+// =============================================================================
 #define DISPLAY_ADDR        0xE0000000
 #define KEYBOARD_ADDR       0xA0000000
-#define AUDIOMAIN_ADDR      0xB0000000   // CTRL: waveform+detune+unison+volume+keymap
-#define AUDIOADSR_ADDR      0xB1000000   // ADSR: attack+decay+sustain+release
-#define AUDIOFILTER_ADDR    0xB2000000   // FILT: cutoff
-#define AUDIOPIANO_ADDR     0xB3000000   // PIANO: attack+body+tail+noise
+#define AUDIONOTE_ADDR      0xB0000000   // reg 0x00: key_bitmap[20:0]
+#define AUDIOCTRL_ADDR      0xB1000000   // reg 0x01: waveform|detune|unison|volume
+#define AUDIOADSR_ADDR      0xB2000000   // reg 0x02: ADSR
+#define AUDIOFILTER_ADDR    0xB3000000   // reg 0x03: filter cutoff
+#define AUDIOPIANO_ADDR     0xB4000000   // reg 0x04: piano params
 #define VGA_ADDR            0xC0000000
-#define DISPLAY_BASE        0x000000C0
 
-// ---- PS/2 state variables (in scratchpad RAM) ----
-#define f0_pending          (*(volatile uint8_t  *)0x0000007C)
-#define shift_pending       (*(volatile uint8_t  *)0x00000080)
-#define wavet_state         (*(volatile uint8_t  *)0x00000070)   // 0=square 1=tri 2=saw 3=sine 4=piano
+// =============================================================================
+// CPU-local variables (carefully spaced to avoid conflicts)
+// =============================================================================
 
-// ---- Scan-code → bit-index lookup table ----
-#define MAP_ADDR            0x00000084
-#define SCAN_MAP_IN_MEM     ((volatile int*)0x00000084)
+// --- scan map: 21 ints = 84 bytes, occupies 0x100 .. 0x153 ---
+#define MAP_ADDR            0x00000100
+#define SCAN_MAP_IN_MEM     ((volatile int*)0x00000100)
 
-// ---- Control-word construction ----
-// reg_ctrl = {res[31:29], wf[28:26], det[25:22], uni[21:18], vol[17:14], keys[13:0]}
-#define DETUNE_DEFAULT      7
-#define UNISON_DEFAULT      4
-#define VOLUME_DEFAULT      8
+// --- keys_state: read/write by handler, kept at safe distance ---
+#define DISPLAY_BASE        0x00000160
 
+// --- interrupt state ---
+#define f0_pending          (*(volatile uint8_t *)0x00000170)
+
+// --- synthesis control params (one byte each) ---
+#define wavet_state         (*(volatile uint8_t *)0x00000180)
+#define vol_state           (*(volatile uint8_t *)0x00000184)
+#define unison_state        (*(volatile uint8_t *)0x00000188)
+#define detune_state        (*(volatile uint8_t *)0x0000018C)
+#define filter_state        (*(volatile uint8_t *)0x00000190)
+#define adsr_att            (*(volatile uint8_t *)0x00000194)
+#define adsr_dec            (*(volatile uint8_t *)0x00000198)
+#define adsr_sus            (*(volatile uint8_t *)0x0000019C)
+#define adsr_rel            (*(volatile uint8_t *)0x000001A0)
+#define piano_att           (*(volatile uint8_t *)0x000001A4)
+#define piano_bdy           (*(volatile uint8_t *)0x000001A8)
+#define piano_tail          (*(volatile uint8_t *)0x000001AC)
+#define piano_noise         (*(volatile uint8_t *)0x000001B0)
+
+// =============================================================================
+// Forward declarations
+// =============================================================================
 void wait(int cycles);
-void write(int addr, int data);
-void read(int addr, int *data);
-int transform(int data);
+void write(int addr,int data);
 void update_keys(uint32_t keys_mask);
+void write_ctrl();
+void write_adsr();
+void write_piano();
 
+// =============================================================================
+// Helpers
+// =============================================================================
+void write(int addr,int data)
+{
+    int *p=(int *)addr;
+    *p=data;
+}
+
+__attribute__((noinline)) void wait(int cycles){while(cycles--);}
+
+void update_keys(uint32_t keys_mask) {
+    *(volatile uint32_t*)VGA_ADDR = (uint32_t)(keys_mask & 0x1FFFFF);
+}
+
+void write_ctrl() {
+    uint32_t ctrl = ((uint32_t)wavet_state << 26) |
+                    ((uint32_t)detune_state << 22) |
+                    ((uint32_t)unison_state << 18) |
+                    ((uint32_t)vol_state   << 14);
+    write(AUDIOCTRL_ADDR, (int)ctrl);
+}
+
+void write_adsr() {
+    uint32_t adsr = ((uint32_t)adsr_att << 24) |
+                    ((uint32_t)adsr_dec << 16) |
+                    ((uint32_t)adsr_sus <<  8) |
+                    ((uint32_t)adsr_rel);
+    write(AUDIOADSR_ADDR, (int)adsr);
+}
+
+void write_piano() {
+    uint32_t piano = ((uint32_t)piano_att  << 24) |
+                     ((uint32_t)piano_bdy  << 16) |
+                     ((uint32_t)piano_tail <<  8) |
+                     ((uint32_t)piano_noise);
+    write(AUDIOPIANO_ADDR, (int)piano);
+}
+void write_seg(int key){
+    uint32_t seg = 0;
+    switch (key) {
+        case 0x16: seg = 0x01000000 | (uint32_t)wavet_state;  break; // '1': waveform
+        case 0x1E: seg = 0x02000000 | (uint32_t)vol_state;    break; // '2': volume
+        case 0x26: seg = 0x03000000 | (uint32_t)unison_state; break; // '3': unison
+        case 0x25: seg = 0x04000000 | (uint32_t)detune_state; break; // '4': detune
+        case 0x2E: seg = 0x05000000 | (uint32_t)filter_state; break; // '5': filter
+        case 0x36: seg = 0x06000000 | (uint32_t)piano_att;    break; // '6': piano attack
+        case 0x3D: seg = 0x07000000 | (uint32_t)piano_bdy;    break; // '7': piano body
+        case 0x3E: seg = 0x08000000 | (uint32_t)piano_tail;   break; // '8': piano tail
+        case 0x46: seg = 0x09000000 | (uint32_t)piano_noise;  break; // '9': piano noise
+        case 0x45: seg = 0x0A000000 | (uint32_t)adsr_att;     break; // '0': ADSR attack
+        case 0x43: seg = 0x0B000000 | (uint32_t)adsr_dec;     break; // 'I': ADSR decay
+        case 0x44: seg = 0x0C000000 | (uint32_t)adsr_sus;     break; // 'O': ADSR sustain
+        case 0x4D: seg = 0x0D000000 | (uint32_t)adsr_rel;     break; // 'P': ADSR release
+    }
+    write(DISPLAY_ADDR, (int)seg);
+}
 // =============================================================================
 // Keyboard interrupt handler
 // =============================================================================
@@ -51,164 +128,178 @@ __attribute__((interrupt)) void handler()
     int *p = (int *)(KEYBOARD_ADDR);
     key = *p;
 
-    // ---- modifier tracking ----
-    if (key == 0x12) {          // Left Shift (make)
-        shift_pending = 1;
-    }
-    if (key == 0x59) {          // Right Shift (make)
-        shift_pending = 1;
-    }
-    if (key == 0xF0) {          // Break prefix
+    if (key == 0xF0) {
         f0_pending = 1;
         return;
     }
 
-    // Debug: display last scancode
-    int *q = (int *)0xE0000000;
-    *q = key;
+    // int *q = (int *)0xE0000000;
+    // *q = key;
 
-    // ---- Wavetable switch: key "1" (PS/2 Set2 scancode 0x16) ----
-    if (key == 0x16 && !f0_pending) {
-        wavet_state = (wavet_state + 1) % 5;   // cycle 0→1→2→3→4→0
-        uint32_t ctrl = ((uint32_t)wavet_state << 26)
-                      | (DETUNE_DEFAULT << 22)
-                      | (UNISON_DEFAULT << 18)
-                      | (VOLUME_DEFAULT << 14)
-                      | (keys_state & 0x3FFF);
-        write(AUDIOMAIN_ADDR, (int)ctrl);
-        return;
-    }
-
-    // ---- Look up bit index from scan map ----
+    // ---- search 21-entry white-key scan map ----
     int bit_idx = -1;
-    for (int i = 0; i <= 14; i++) {
+    for (int i = 0; i < 21; i++) {
         if (key == (unsigned char)SCAN_MAP_IN_MEM[i]) {
             bit_idx = i;
             break;
         }
     }
 
-    // Shift released while no other key: ignore
-    if (shift_pending && f0_pending) {
-        f0_pending  = 0;
-        shift_pending = 0;
-        return;
-    }
-
-    // ---- Update key state ----
     if (bit_idx != -1) {
-        if (shift_pending) {
-            bit_idx += 12;                 // shift → next octave
-        }
+        // note key: update bitmap
         if (f0_pending) {
-            keys_state &= ~(1U << bit_idx);   // release
+            keys_state &= ~(1U << bit_idx);
         } else {
-            keys_state |=  (1U << bit_idx);   // press
+            keys_state |= (1U << bit_idx);
         }
+        write(DISPLAY_BASE, keys_state);
+        write(AUDIONOTE_ADDR, (int)keys_state);
+    } else if (!f0_pending) {
+        // control key: act on make (press) only
+        int ctrl_changed = 0;
+        int adsr_changed = 0;
+        int piano_changed = 0;
+
+        switch (key) {
+            // ---- synthesis control (0x01) ----
+            case 0x16: // '1' — waveform cycle 0→1→2→3→4→0
+                wavet_state++;
+                if (wavet_state >= 5) wavet_state = 0;
+                ctrl_changed = 1;
+                break;
+            case 0x1E: // '2' — volume +1, wrap 0→15
+                vol_state++;
+                vol_state &= 0xF;
+                ctrl_changed = 1;
+                break;
+            case 0x26: // '3' — unison cycle 1→2→4→8→1
+                if (unison_state >= 8)
+                    unison_state = 1;
+                else
+                    unison_state = unison_state << 1;
+                ctrl_changed = 1;
+                break;
+            case 0x25: // '4' — detune +1, wrap 0→15
+                detune_state++;
+                detune_state &= 0xF;
+                ctrl_changed = 1;
+                break;
+
+            // ---- filter (0x03) ----
+            case 0x2E: // '5' — filter cutoff +1, wrap 0→31
+                filter_state++;
+                filter_state &= 0x1F;
+                write(AUDIOFILTER_ADDR, (int)filter_state);
+                break;
+
+            // ---- piano (0x04) ----
+            case 0x36: // '6' — piano attack +16
+                piano_att += 16;
+                piano_changed = 1;
+                break;
+            case 0x3D: // '7' — piano body +16
+                piano_bdy += 16;
+                piano_changed = 1;
+                break;
+            case 0x3E: // '8' — piano tail +8
+                piano_tail += 8;
+                piano_changed = 1;
+                break;
+            case 0x46: // '9' — piano noise +16
+                piano_noise += 16;
+                piano_changed = 1;
+                break;
+
+            // ---- ADSR (0x02) ----
+            case 0x45: // '0' — ADSR attack +16
+                adsr_att += 16;
+                adsr_changed = 1;
+                break;
+            case 0x43: // 'I' — ADSR decay +16
+                adsr_dec += 16;
+                adsr_changed = 1;
+                break;
+            case 0x44: // 'O' — ADSR sustain +16
+                adsr_sus += 16;
+                adsr_changed = 1;
+                break;
+            case 0x4D: // 'P' — ADSR release +16
+                adsr_rel += 16;
+                adsr_changed = 1;
+                break;
+        }
+
+        if (ctrl_changed)  write_ctrl();
+        if (adsr_changed)  write_adsr();
+        if (piano_changed) write_piano();
+
+        write_seg(key);
     }
 
-    // Persist key state
-    
+    // always consume f0_pending after the key byte arrives
     f0_pending = 0;
-
-    // Write full control word to audio (waveform + detune + unison + volume + keys)
-    uint32_t ctrl = ((uint32_t)wavet_state << 26)
-                  | (DETUNE_DEFAULT << 22)
-                  | (UNISON_DEFAULT << 18)
-                  | (VOLUME_DEFAULT << 14)
-                  | (keys_state & 0x3FFF);
-    write(AUDIOMAIN_ADDR, (int)ctrl);
-    write(DISPLAY_BASE, (int)ctrl);
-
-    // Mirror low 14 bits to VGA for chess board
     update_keys(keys_state);
 }
 
 // =============================================================================
-// Utility functions
+// Initialization
 // =============================================================================
-void write(int addr, int data)
-{
-    int *p = (int *)addr;
-    *p = data;
+void init(){
+    // --- scan map: 21 white keys C4—B6, 3 keyboard rows ---
+
+    // Z—M row  → C4—B4
+    write(MAP_ADDR + ( 0<<2), (int)0x1A); // Z → C4
+    write(MAP_ADDR + ( 1<<2), (int)0x22); // X → D4
+    write(MAP_ADDR + ( 2<<2), (int)0x21); // C → E4
+    write(MAP_ADDR + ( 3<<2), (int)0x2A); // V → F4
+    write(MAP_ADDR + ( 4<<2), (int)0x32); // B → G4
+    write(MAP_ADDR + ( 5<<2), (int)0x31); // N → A4
+    write(MAP_ADDR + ( 6<<2), (int)0x3A); // M → B4
+
+    // A—J row  → C5—B5
+    write(MAP_ADDR + ( 7<<2), (int)0x1C); // A → C5
+    write(MAP_ADDR + ( 8<<2), (int)0x1B); // S → D5
+    write(MAP_ADDR + ( 9<<2), (int)0x23); // D → E5
+    write(MAP_ADDR + (10<<2), (int)0x2B); // F → F5
+    write(MAP_ADDR + (11<<2), (int)0x34); // G → G5
+    write(MAP_ADDR + (12<<2), (int)0x33); // H → A5
+    write(MAP_ADDR + (13<<2), (int)0x3B); // J → B5
+
+    // Q—U row  → C6—B6
+    write(MAP_ADDR + (14<<2), (int)0x15); // Q → C6
+    write(MAP_ADDR + (15<<2), (int)0x1D); // W → D6
+    write(MAP_ADDR + (16<<2), (int)0x24); // E → E6
+    write(MAP_ADDR + (17<<2), (int)0x2D); // R → F6
+    write(MAP_ADDR + (18<<2), (int)0x2C); // T → G6
+    write(MAP_ADDR + (19<<2), (int)0x35); // Y → A6
+    write(MAP_ADDR + (20<<2), (int)0x3C); // U → B6
+
+    // --- init parameter defaults ---
+    wavet_state  = 0;    // square
+    vol_state    = 8;    // volume 8
+    unison_state = 4;    // 4 voices
+    detune_state = 7;    // detune 7
+    filter_state = 16;   // filter bypass
+    adsr_att     = 20;
+    adsr_dec     = 100;
+    adsr_sus     = 255;
+    adsr_rel     = 100;
+    piano_att    = 128;
+    piano_bdy    = 200;
+    piano_tail   = 16;
+    piano_noise  = 128;
+
+    // --- push all registers ---
+    write(AUDIONOTE_ADDR,    (int)0);   // no notes active
+    write_ctrl();
+    write_adsr();
+    write(AUDIOFILTER_ADDR,  (int)filter_state);
+    write_piano();
 }
 
-__attribute__((noinline)) void wait(int cycles)
-{
-    while (cycles--);
-}
-
-void update_keys(uint32_t keys_mask)
-{
-    *(volatile uint32_t*)VGA_ADDR = (uint32_t)(keys_mask & 0x3FFF);
-}
-
-// =============================================================================
-// Scan-code → bit-index mapping table
-//
-//   Bottom row (Z..M):      bits  0~ 6  → C4 ~ B4
-//   Home   row (A..J):      bits  7~13  → C5 ~ B5
-//   Top    row (Q..U):      bits 14~20  → C6 ~ B6 (unused, key_bitmap is 14-bit)
-//
-//   PS/2 Set 2 scan codes:
-//     0x16 = "1"       → reserved for wavetable switching
-//     0x12 = Left Shift → octave shift (+12)
-//     0x59 = Right Shift
-//     0xF0 = break prefix
-// =============================================================================
-void init()
-{
-    // ---- Bottom row (Z-M): C4-B4 (bits 0-6) ----
-    write(MAP_ADDR + ( 0 << 2), (int)0x1A);   // Z  → C4
-    write(MAP_ADDR + ( 1 << 2), (int)0x22);   // X  → D4
-    write(MAP_ADDR + ( 2 << 2), (int)0x21);   // C  → E4
-    write(MAP_ADDR + ( 3 << 2), (int)0x2A);   // V  → F4
-    write(MAP_ADDR + ( 4 << 2), (int)0x32);   // B  → G4
-    write(MAP_ADDR + ( 5 << 2), (int)0x31);   // N  → A4
-    write(MAP_ADDR + ( 6 << 2), (int)0x3A);   // M  → B4
-
-    // ---- Home row (A-J): C5-B5 (bits 7-13) ----
-    write(MAP_ADDR + ( 7 << 2), (int)0x1C);   // A  → C5
-    write(MAP_ADDR + ( 8 << 2), (int)0x1B);   // S  → D5
-    write(MAP_ADDR + ( 9 << 2), (int)0x23);   // D  → E5
-    write(MAP_ADDR + (10 << 2), (int)0x2B);   // F  → F5
-    write(MAP_ADDR + (11 << 2), (int)0x34);   // G  → G5
-    write(MAP_ADDR + (12 << 2), (int)0x33);   // H  → A5
-    write(MAP_ADDR + (13 << 2), (int)0x3B);   // J  → B5
-
-    // ---- Top row (Q-U): C6-B6 (bits 14-20, unused for 14-bit keymap) ----
-    write(MAP_ADDR + (14 << 2), (int)0x15);   // Q  → C6
-    write(MAP_ADDR + (15 << 2), (int)0x1D);   // W  → D6
-    write(MAP_ADDR + (16 << 2), (int)0x24);   // E  → E6
-    write(MAP_ADDR + (17 << 2), (int)0x2D);   // R  → F6
-    write(MAP_ADDR + (18 << 2), (int)0x2C);   // T  → G6
-    write(MAP_ADDR + (19 << 2), (int)0x35);   // Y  → A6
-    write(MAP_ADDR + (20 << 2), (int)0x3C);   // U  → B6
-}
-
-// =============================================================================
-// Main
-// =============================================================================
 void main()
 {
     init();
-
-    // Initialize audio CTRL: waveform=0 (square), detune=7, unison=4, volume=8, keys=0
-    uint32_t ctrl_init = ((uint32_t)wavet_state << 26)
-                       | (DETUNE_DEFAULT << 22)
-                       | (UNISON_DEFAULT << 18)
-                       | (VOLUME_DEFAULT << 14);
-    write(AUDIOMAIN_ADDR, (int)ctrl_init);
-
-    // Initialize ADSR: A=20, D=100, S=255, R=100 (matches HW defaults)
-    write(AUDIOADSR_ADDR, (int)0x1464FF64);
-
-    // Initialize filter: cutoff=16 (bypass, lets harmonics through)
-    write(AUDIOFILTER_ADDR, (int)16);
-
-    // Initialize piano: attack=128, body=200, tail=16, noise=128
-    write(AUDIOPIANO_ADDR, (int)0x80C81080);
-
     begin:
     goto begin;
 }
