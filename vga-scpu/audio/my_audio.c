@@ -154,6 +154,7 @@ __attribute__((interrupt)) void handler()
         }
         write(DISPLAY_BASE, keys_state);
         write(AUDIONOTE_ADDR, (int)keys_state);
+        write(DISPLAY_BASE,(int)(keys_state>>8|key));
     } else if (!f0_pending) {
         // control key: act on make (press) only
         int ctrl_changed = 0;
@@ -290,6 +291,7 @@ void init(){
     piano_noise  = 128;
 
     // --- push all registers ---
+    write(DISPLAY_BASE,      (int)0);
     write(AUDIONOTE_ADDR,    (int)0);   // no notes active
     write_ctrl();
     write_adsr();
