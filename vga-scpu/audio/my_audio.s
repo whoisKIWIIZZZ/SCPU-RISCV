@@ -453,7 +453,7 @@ Disassembly of section .text:
  6d4:	f9344783          	lbu	a5,-109(s0)
  6d8:	00f767b3          	or	a5,a4,a5
  6dc:	00078593          	mv	a1,a5
- 6e0:	16000513          	li	a0,352
+ 6e0:	e0000537          	lui	a0,0xe0000
  6e4:	959ff0ef          	jal	3c <write>
  6e8:	3b40006f          	j	a9c <handler+0x51c>
  6ec:	17000793          	li	a5,368
