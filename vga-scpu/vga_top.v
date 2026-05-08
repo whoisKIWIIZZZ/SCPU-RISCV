@@ -336,7 +336,8 @@ end
 wire in_wm = (col>=10'd384)&&(col<10'd640)&&(row>=9'd462)&&(row<9'd478);
 wire [9:0] wmx   = col - 10'd384;
 wire [4:0] wm_ci = wmx[8:4];
-wire [2:0] wm_py = (row - 9'd462)[3:1];
+wire [8:0] wm_ry  = row - 9'd462;
+wire [2:0] wm_py = wm_ry[3:1];
 wire [2:0] wm_px = wmx[3:1];
 
 function [7:0] wm_ch;
@@ -455,7 +456,8 @@ wire in_addr = (col >= 10'd10) && (col < 10'd202)
 
 wire [9:0] addr_rx  = col - 10'd10;
 wire [4:0] addr_ci  = addr_rx[7:4];
-wire [2:0] addr_py  = (row - 9'd88)[3:1];
+wire [8:0] addr_ry  = row - 9'd88;
+wire [2:0] addr_py  = addr_ry[3:1];
 wire [2:0] addr_px  = addr_rx[3:1];
 
 function [7:0] hex_ch;
