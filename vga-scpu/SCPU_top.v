@@ -248,7 +248,7 @@ wire [31:0] ps2_scancode;
         .clk      (clk),           // 100MHz直接给VGA，内部自己分频
         .rst      (~rstn),
         .vram_we  (vram_we),
-        .vram_addr(vram_addr[13:0]),
+        .vram_addr(vram_addr[20:0]),
         .vram_din (Data_out[1:0]),
         .vram_dout(vram_dout),
         .HSYNC    (VGA_HSYNC),

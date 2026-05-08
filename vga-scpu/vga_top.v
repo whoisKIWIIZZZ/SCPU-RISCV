@@ -26,7 +26,7 @@ module VGA_top(
     input         clk,
     input         rst,
     input         vram_we,
-    input  [13:0] vram_addr,
+    input  [20:0] vram_addr,
     input  [1:0]  vram_din,
     output [1:0]  vram_dout,
     output        HSYNC,
@@ -82,50 +82,57 @@ VGA_Scan u_scan(.clk(clk25),.rst(rst),.row(row),.col(col),
 // ============================================================
 // 4. Key state latch + edge detection
 // ============================================================
-reg [13:0] key_state;
+reg [20:0] key_state;
 always @(posedge clk)
-    if (rst) key_state <= 14'b0;
-    else if (vram_we) key_state <= vram_addr[13:0];
+    if (rst) key_state <= 21'b0;
+    else if (vram_we) key_state <= vram_addr[20:0];
 assign vram_dout = key_state[1:0];
 
 // Previous key_state for edge detection
-reg [13:0] prev_key;
+reg [20:0] prev_key;
 always @(posedge clk25)
-    if (rst) prev_key <= 14'b0;
+    if (rst) prev_key <= 21'b0;
     else if (vsync_rise) prev_key <= key_state;
 
-wire [13:0] new_presses = key_state & ~prev_key;  // 0→1 edges this frame
+wire [20:0] new_presses = key_state & ~prev_key;  // 0→1 edges this frame
 
-// Priority encoder: lowest-indexed new press (0..13)
-wire [3:0] first_new;
-assign first_new = new_presses[0]  ? 4'd0  :
-                   new_presses[1]  ? 4'd1  :
-                   new_presses[2]  ? 4'd2  :
-                   new_presses[3]  ? 4'd3  :
-                   new_presses[4]  ? 4'd4  :
-                   new_presses[5]  ? 4'd5  :
-                   new_presses[6]  ? 4'd6  :
-                   new_presses[7]  ? 4'd7  :
-                   new_presses[8]  ? 4'd8  :
-                   new_presses[9]  ? 4'd9  :
-                   new_presses[10] ? 4'd10 :
-                   new_presses[11] ? 4'd11 :
-                   new_presses[12] ? 4'd12 :
-                   new_presses[13] ? 4'd13 : 4'd0;
+// Priority encoder: lowest-indexed new press (0..20)
+wire [4:0] first_new;
+assign first_new = new_presses[0]  ? 5'd0  :
+                   new_presses[1]  ? 5'd1  :
+                   new_presses[2]  ? 5'd2  :
+                   new_presses[3]  ? 5'd3  :
+                   new_presses[4]  ? 5'd4  :
+                   new_presses[5]  ? 5'd5  :
+                   new_presses[6]  ? 5'd6  :
+                   new_presses[7]  ? 5'd7  :
+                   new_presses[8]  ? 5'd8  :
+                   new_presses[9]  ? 5'd9  :
+                   new_presses[10] ? 5'd10 :
+                   new_presses[11] ? 5'd11 :
+                   new_presses[12] ? 5'd12 :
+                   new_presses[13] ? 5'd13 :
+                   new_presses[14] ? 5'd14 :
+                   new_presses[15] ? 5'd15 :
+                   new_presses[16] ? 5'd16 :
+                   new_presses[17] ? 5'd17 :
+                   new_presses[18] ? 5'd18 :
+                   new_presses[19] ? 5'd19 :
+                   new_presses[20] ? 5'd20 : 5'd0;
 
 wire any_new = |new_presses;
 
 // ============================================================
 // 5. Key-press history FIFO  (13 slots, oldest @ idx 0)
 // ============================================================
-reg [3:0]  hist_note [0:12];
+reg [4:0]  hist_note [0:12];
 reg [12:0] hist_valid;
 integer    hi;
 
 always @(posedge clk25 or posedge rst) begin
     if (rst) begin
         for (hi = 0; hi < 13; hi = hi + 1) begin
-            hist_note[hi] <= 4'd0;
+            hist_note[hi] <= 5'd0;
         end
         hist_valid <= 13'b0;
     end else if (vsync_rise && any_new) begin
@@ -193,10 +200,19 @@ wire [2:0] txt_px   = tx[2:0];
         end
     endfunction
 
+    function [2:0] note_pos;
+        input [4:0] idx;
+        begin
+            if      (idx < 5'd7)  note_pos = idx[2:0];
+            else if (idx < 5'd14) note_pos = idx[2:0] - 3'd7;
+            else                  note_pos = idx[2:0] - 3'd7 - 3'd7;
+        end
+    endfunction
+
     function [7:0] note_letter;
         input [4:0] idx;
         begin
-            case (idx[2:0])
+            case (note_pos(idx))
                 3'd0: note_letter = "C"; 3'd1: note_letter = "D";
                 3'd2: note_letter = "E"; 3'd3: note_letter = "F";
                 3'd4: note_letter = "G"; 3'd5: note_letter = "A";
@@ -433,40 +449,10 @@ wire [2:0] midi_px = midi_char_left  ? tmp[2:0]  :tt[2:0];
 wire [2:0] midi_py = midi_cy[2:0];
 
 // Note index for the slot being scanned
-wire [3:0]  midi_note  = hist_note[midi_slot];
+wire [4:0]  midi_note  = hist_note[midi_slot];
 wire        midi_valid = hist_valid[midi_slot];
 
-// Note‑label functions (same as the original note labels)
-function [7:0] nc0;
-    input [3:0] i;
-    begin
-        case(i)
-            4'd0, 4'd1:  nc0 = 8'h43; // C
-            4'd2, 4'd3:  nc0 = 8'h44; // D
-            4'd4:        nc0 = 8'h45; // E
-            4'd5, 4'd6:  nc0 = 8'h46; // F
-            4'd7, 4'd8:  nc0 = 8'h47; // G
-            4'd9, 4'd10: nc0 = 8'h41; // A
-            4'd11:       nc0 = 8'h42; // B
-            4'd12, 4'd13:nc0 = 8'h43; // C
-            default:     nc0 = 8'h20;
-        endcase
-    end
-endfunction
-
-function [7:0] nc1;
-    input [3:0] i;
-    begin
-        case(i)
-            4'd0, 4'd2, 4'd4, 4'd5, 4'd7, 4'd9, 4'd11: nc1 = 8'h20; // ' '
-            4'd1, 4'd3, 4'd6, 4'd8, 4'd10, 4'd13:      nc1 = 8'h23; // '#'
-            4'd12:                                     nc1 = 8'h35; // '5'
-            default:                                   nc1 = 8'h20;
-        endcase
-    end
-endfunction
-
-wire [7:0] midi_ascii = midi_char_sel ? nc1(midi_note) : nc0(midi_note);
+wire [7:0] midi_ascii = midi_char_sel ? note_octave(midi_note) : note_letter(midi_note);
 
 // ============================================================
 // 12. Font ROM address MUX
