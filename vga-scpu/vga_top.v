@@ -421,41 +421,83 @@ wire [3:0] g_grad = g_blend[7:4];
 wire [3:0] b_grad = b_blend[7:4];
 
 // ============================================================
-// 11. DYNAMIC MIDI KEY HISTORY  (centre)
-//     col[112,527] row[220,251]   13 slots × 32 px
-//
-//     Each slot: 32×32 px.  Two 8×8 characters centred
-//     horizontally (sx=4..11 left, sx=20..27 right) at
-//     cy=8..15.  Valid slot = white text; empty = background.
+// 11. PIANO KEYBOARD  col[47,593] row[190,270]
+//     21 white keys (C4..B6), each 26px wide × 80px tall
+//     Border: 1px black gap between keys
+//     Pressed: cyan highlight; Released: white
 // ============================================================
-wire in_midi = (col>=10'd112)&&(col<10'd528)&&(row>=9'd220)&&(row<9'd252);
-wire [9:0] midi_cx = col - 10'd112;   // 0..415
-wire [8:0] midi_cy = row - 9'd220;    // 0..31
+localparam [9:0] PNO_X0 = 10'd47;
+localparam [8:0] PNO_Y0 = 9'd190;
+localparam [8:0] PNO_Y1 = 9'd270;
+localparam [9:0] KEY_W  = 10'd26;
 
-// Which slot (0..12) and sub‑slot pixel position
-wire [3:0] midi_slot = midi_cx[8:5];  // floor(cx/32)
-wire [4:0] midi_sx   = midi_cx[4:0];  // 0..31 within slot
+wire in_piano = (col >= PNO_X0) && (col < PNO_X0 + 10'd546)
+             && (row >= PNO_Y0) && (row < PNO_Y1);
 
-// Character regions within a 32‑px slot
-wire midi_char_left  = (midi_sx >= 5'd4) && (midi_sx < 5'd12);
-wire midi_char_right = (midi_sx >= 5'd20) && (midi_sx < 5'd28);
-wire in_midi_char    = midi_char_left || midi_char_right;
-wire midi_char_sel   = midi_char_right;  // 0=left, 1=right
-wire in_midi_char_row = (midi_cy >= 9'd8) && (midi_cy < 9'd16);
-wire[4:0] tmp = midi_sx - 5'd4;
-wire[4:0] tt = (midi_sx - 5'd20);
-// Pixel column within the 8‑px character
-wire [2:0] midi_px = midi_char_left  ? tmp[2:0]  :tt[2:0];
-wire [2:0] midi_py = midi_cy[2:0];
+wire [9:0] pno_rx   = col - PNO_X0;
+// Divide by 26: key index and sub-pixel
+// Synthesisable: use explicit divide (small constant, tool will optimise)
+wire [4:0] pno_ki   = pno_rx / KEY_W;      // 0..20
+wire [9:0] pno_sx   = pno_rx - (pno_ki * KEY_W); // 0..25
+wire [8:0] pno_sy   = row - PNO_Y0;        // 0..79
 
-// Note index for the slot being scanned
-wire [4:0]  midi_note  = hist_note[midi_slot];
-wire        midi_valid = hist_valid[midi_slot];
+wire pno_pressed = (pno_ki <= 5'd20) && key_state[pno_ki];
 
-wire [7:0] midi_ascii = midi_char_sel ? note_octave(midi_note) : note_letter(midi_note);
+// 1-px borders
+wire pno_border = (pno_sx == 10'd0) || (pno_sx == KEY_W-10'd1)
+               || (pno_sy == 9'd0)  || (pno_sy == PNO_Y1-PNO_Y0-9'd1);
 
 // ============================================================
-// 12. Font ROM address MUX
+// 12. vram_addr REAL-TIME HEX DISPLAY
+//     col[10,169] row[60,75]   text row below existing labels
+//     "ADDR: XXXXX"  (5 hex digits for 21-bit addr, 0x00000..0x1FFFF)
+// ============================================================
+wire in_addr = (col >= 10'd10) && (col < 10'd10 + 10'd128)
+            && (row >= 9'd60)  && (row < 9'd68);
+
+wire [9:0] addr_rx  = col - 10'd10;
+wire [4:0] addr_ci  = addr_rx[7:3];   // char column 0..15
+wire [2:0] addr_py  = row - 9'd60;
+wire [2:0] addr_px  = addr_rx[2:0];
+
+function [7:0] hex_ch;
+    input [3:0] nibble;
+    begin
+        case (nibble)
+            4'h0: hex_ch = "0"; 4'h1: hex_ch = "1";
+            4'h2: hex_ch = "2"; 4'h3: hex_ch = "3";
+            4'h4: hex_ch = "4"; 4'h5: hex_ch = "5";
+            4'h6: hex_ch = "6"; 4'h7: hex_ch = "7";
+            4'h8: hex_ch = "8"; 4'h9: hex_ch = "9";
+            4'ha: hex_ch = "A"; 4'hb: hex_ch = "B";
+            4'hc: hex_ch = "C"; 4'hd: hex_ch = "D";
+            4'he: hex_ch = "E"; 4'hf: hex_ch = "F";
+        endcase
+    end
+endfunction
+
+// vram_addr is 21 bits → 6 hex digits (top nibble only 0 or 1)
+reg [7:0] addr_ascii;
+always @(*) begin
+    case (addr_ci)
+        5'd0: addr_ascii = "A";
+        5'd1: addr_ascii = "D";
+        5'd2: addr_ascii = "D";
+        5'd3: addr_ascii = "R";
+        5'd4: addr_ascii = ":";
+        5'd5: addr_ascii = " ";
+        5'd6: addr_ascii = hex_ch({3'b0, vram_addr[20]});
+        5'd7: addr_ascii = hex_ch(vram_addr[19:16]);
+        5'd8: addr_ascii = hex_ch(vram_addr[15:12]);
+        5'd9: addr_ascii = hex_ch(vram_addr[11:8]);
+        5'd10: addr_ascii = hex_ch(vram_addr[7:4]);
+        5'd11: addr_ascii = hex_ch(vram_addr[3:0]);
+        default: addr_ascii = " ";
+    endcase
+end
+
+// ============================================================
+// 13. Font ROM address MUX  (updated)
 // ============================================================
 always @(*) begin
     if (in_abc)
@@ -464,68 +506,50 @@ always @(*) begin
         font_addr = {wm_ch(wm_ci), wm_py};
     else if (in_txt)
         font_addr = {txt_ascii, txt_py};
-    else if (in_midi && in_midi_char && in_midi_char_row && midi_valid)
-        font_addr = {midi_ascii, midi_py};
+    else if (in_addr)
+        font_addr = {addr_ascii, addr_py};
     else
-        font_addr = {8'h20, 3'b0};  // space
+        font_addr = {8'h20, 3'b0};
 end
 
-// Font pixel on/off
-wire abc_on  = in_abc                     && font_data[7-abc_px];
-wire wm_on   = in_wm                      && font_data[7-wm_px];
-wire txt_on  = in_txt                     && font_data[7-txt_px];
-wire midi_on = in_midi && in_midi_char && in_midi_char_row
-               && midi_valid              && font_data[7-midi_px];
+wire abc_on  = in_abc  && font_data[7 - abc_px];
+wire wm_on   = in_wm   && font_data[7 - wm_px];
+wire txt_on  = in_txt  && font_data[7 - txt_px];
+wire addr_on = in_addr && font_data[7 - addr_px];
 
 // ============================================================
-// 13. Final colour output
+// 14. Final colour output  (updated)
 // ============================================================
-reg [3:0] r_out, g_out, b_out;
-
 always @(*) begin
     if (!active) begin
-        r_out = 4'h0; g_out = 4'h0; b_out = 4'h0;
+        r_out=4'h0; g_out=4'h0; b_out=4'h0;
     end
-    // Alphabet debug row (yellow)
-    else if (abc_on) begin
-        r_out = 4'hF; g_out = 4'hF; b_out = 4'h0;
+    else if (abc_on) begin           // yellow debug
+        r_out=4'hF; g_out=4'hF; b_out=4'h0;
     end
-    // Watermark (grey)
-    else if (wm_on) begin
-        r_out = 4'h7; g_out = 4'h7; b_out = 4'h7;
+    else if (wm_on) begin            // grey watermark
+        r_out=4'h7; g_out=4'h7; b_out=4'h7;
     end
-    // Top-left text (white)
-    else if (txt_on) begin
-        r_out = 4'hF; g_out = 4'hF; b_out = 4'hF;
+    else if (txt_on) begin           // white labels
+        r_out=4'hF; g_out=4'hF; b_out=4'hF;
     end
-    // MIDI history — white text, brighter for newer entries
-    else if (midi_on) begin
-        // Brightness fades with slot position (0=oldest, 12=newest)
-        case (midi_slot)
-            4'd12:     begin r_out=4'hF; g_out=4'hF; b_out=4'hF; end
-            4'd11:     begin r_out=4'hE; g_out=4'hE; b_out=4'hE; end
-            4'd10:     begin r_out=4'hD; g_out=4'hD; b_out=4'hD; end
-            4'd9:      begin r_out=4'hC; g_out=4'hC; b_out=4'hC; end
-            4'd8:      begin r_out=4'hB; g_out=4'hB; b_out=4'hB; end
-            4'd7:      begin r_out=4'hA; g_out=4'hA; b_out=4'hA; end
-            4'd6:      begin r_out=4'h9; g_out=4'h9; b_out=4'h9; end
-            4'd5:      begin r_out=4'h8; g_out=4'h8; b_out=4'h8; end
-            4'd4:      begin r_out=4'h7; g_out=4'h7; b_out=4'h7; end
-            4'd3:      begin r_out=4'h6; g_out=4'h6; b_out=4'h6; end
-            4'd2:      begin r_out=4'h5; g_out=4'h5; b_out=4'h5; end
-            4'd1:      begin r_out=4'h4; g_out=4'h4; b_out=4'h4; end
-            default:   begin r_out=4'h3; g_out=4'h3; b_out=4'h3; end
-        endcase
+    else if (addr_on) begin          // green addr text
+        r_out=4'h0; g_out=4'hF; b_out=4'h4;
     end
-    // Flowing RGB gradient
-    else if (in_grad) begin
-        r_out = r_grad;
-        g_out = g_grad;
-        b_out = b_grad;
+    else if (in_piano) begin
+        if (pno_border) begin        // key border → black
+            r_out=4'h0; g_out=4'h0; b_out=4'h0;
+        end else if (pno_pressed) begin  // pressed → cyan
+            r_out=4'h0; g_out=4'hE; b_out=4'hF;
+        end else begin               // released → white
+            r_out=4'hF; g_out=4'hF; b_out=4'hF;
+        end
     end
-    // Background (dark blue)
-    else begin
-        r_out = 4'h1; g_out = 4'h1; b_out = 4'h2;
+    else if (in_grad) begin          // flowing gradient
+        r_out=r_grad; g_out=g_grad; b_out=b_grad;
+    end
+    else begin                       // dark blue background
+        r_out=4'h1; g_out=4'h1; b_out=4'h2;
     end
 end
 
