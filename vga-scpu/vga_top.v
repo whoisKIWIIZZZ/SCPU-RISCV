@@ -511,7 +511,7 @@ always @(*) begin
     else
         font_addr = {8'h20, 3'b0};
 end
-
+reg [3:0] r_out, g_out, b_out; // final outputs before assign
 wire abc_on  = in_abc  && font_data[7 - abc_px];
 wire wm_on   = in_wm   && font_data[7 - wm_px];
 wire txt_on  = in_txt  && font_data[7 - txt_px];
