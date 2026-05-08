@@ -65,10 +65,29 @@ always @(posedge clk25 or posedge rst)
     if (rst) vsync_d <= 0; else vsync_d <= VSYNC;
 assign vsync_rise = VSYNC && !vsync_d;
 
+// Popcount: how many keys are currently pressed
+wire [4:0] active_keys;
+assign active_keys = key_state[0] + key_state[1] + key_state[2] + key_state[3] + key_state[4] +
+                     key_state[5] + key_state[6] + key_state[7] + key_state[8] + key_state[9] +
+                     key_state[10] + key_state[11] + key_state[12] + key_state[13] + key_state[14] +
+                     key_state[15] + key_state[16] + key_state[17] + key_state[18] + key_state[19] +
+                     key_state[20];
+
+// Speed tiers: 0→static, 1-3→slow, 4-5→medium, 6+→fast
+wire [2:0] speed_inc;
+assign speed_inc = (active_keys == 5'd0)  ? 3'd0 :
+                   (active_keys <= 5'd3)  ? 3'd1 :
+                   (active_keys <= 5'd5)  ? 3'd2 : 3'd4;
+
+// anim_cnt wraps at 192 (= 6 sectors × 32) so the hue cycle is seamless
 reg [7:0] anim_cnt;
 always @(posedge clk25 or posedge rst)
-    if (rst) anim_cnt <= 0;
-    else if (vsync_rise) anim_cnt <= anim_cnt + 1;
+    if (rst) anim_cnt <= 8'd0;
+    else if (vsync_rise) begin
+        anim_cnt <= anim_cnt + speed_inc;
+        if (anim_cnt + speed_inc >= 8'd192)
+            anim_cnt <= anim_cnt + speed_inc - 8'd192;
+    end
 
 // ============================================================
 // 3. VGA Scan
@@ -375,7 +394,7 @@ wire [8:0] gy = row - 9'd280;    // 0..199
 
 // Hue: horizontal position + frame animation → flowing colours
 wire [12:0] hue_base = ({3'b0, gx} * 13'd11) >> 4;
-wire [7:0]  scroll   = anim_cnt;                  // 0..255, ~4.3 s cycle
+wire [7:0]  scroll   = anim_cnt;                  // 0..191, seamless cycle
 wire [12:0] hue_raw  = {5'b0, hue_base[7:0]} + {5'b0, scroll};
 // Modulo 192  (6 sectors × 32)
 wire [9:0]  h0 = hue_raw[9:0];
@@ -486,12 +505,12 @@ always @(*) begin
         5'd3: addr_ascii = "R";
         5'd4: addr_ascii = ":";
         5'd5: addr_ascii = " ";
-        5'd6: addr_ascii = hex_ch({3'b0, vram_addr[20]});
-        5'd7: addr_ascii = hex_ch(vram_addr[19:16]);
-        5'd8: addr_ascii = hex_ch(vram_addr[15:12]);
-        5'd9: addr_ascii = hex_ch(vram_addr[11:8]);
-        5'd10: addr_ascii = hex_ch(vram_addr[7:4]);
-        5'd11: addr_ascii = hex_ch(vram_addr[3:0]);
+        5'd6: addr_ascii = hex_ch({3'b0, key_state[20]});
+        5'd7: addr_ascii = hex_ch(key_state[19:16]);
+        5'd8: addr_ascii = hex_ch(key_state[15:12]);
+        5'd9: addr_ascii = hex_ch(key_state[11:8]);
+        5'd10: addr_ascii = hex_ch(key_state[7:4]);
+        5'd11: addr_ascii = hex_ch(key_state[3:0]);
         default: addr_ascii = " ";
     endcase
 end

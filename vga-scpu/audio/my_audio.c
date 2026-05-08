@@ -154,7 +154,7 @@ __attribute__((interrupt)) void handler()
         }
         write(DISPLAY_BASE, keys_state);
         write(AUDIONOTE_ADDR, (int)keys_state);
-        write(DISPLAY_ADDR,(int)(keys_state<<8|key));
+        f0_pending = 0;
     } else if (!f0_pending) {
         // control key: act on make (press) only
         int ctrl_changed = 0;
@@ -162,7 +162,6 @@ __attribute__((interrupt)) void handler()
         int piano_changed = 0;
 
         switch (key) {
-            // ---- synthesis control (0x01) ----
             case 0x16: // '1' — waveform cycle 0→1→2→3→4→0
                 wavet_state++;
                 if (wavet_state >= 5) wavet_state = 0;
@@ -185,15 +184,11 @@ __attribute__((interrupt)) void handler()
                 detune_state &= 0xF;
                 ctrl_changed = 1;
                 break;
-
-            // ---- filter (0x03) ----
             case 0x2E: // '5' — filter cutoff +1, wrap 0→31
                 filter_state++;
                 filter_state &= 0x1F;
                 write(AUDIOFILTER_ADDR, (int)filter_state);
                 break;
-
-            // ---- piano (0x04) ----
             case 0x36: // '6' — piano attack +16
                 piano_att += 16;
                 piano_changed = 1;
@@ -210,8 +205,6 @@ __attribute__((interrupt)) void handler()
                 piano_noise += 16;
                 piano_changed = 1;
                 break;
-
-            // ---- ADSR (0x02) ----
             case 0x45: // '0' — ADSR attack +16
                 adsr_att += 16;
                 adsr_changed = 1;
@@ -233,13 +226,20 @@ __attribute__((interrupt)) void handler()
         if (ctrl_changed)  write_ctrl();
         if (adsr_changed)  write_adsr();
         if (piano_changed) write_piano();
-
-        write_seg(key);
+        f0_pending = 0;
+    } else {
+        // f0_pending=1 but byte not in scan map: spurious byte during
+        // break sequence — don't clear f0_pending, don't touch display
+        return;
     }
 
-    // always consume f0_pending after the key byte arrives
-    f0_pending = 0;
     update_keys(keys_state);
+
+    if (bit_idx != -1) {
+        write(DISPLAY_ADDR, (int)(keys_state<<8|key));
+    } else {
+        write_seg(key);
+    }
 }
 
 // =============================================================================
@@ -276,6 +276,7 @@ void init(){
     write(MAP_ADDR + (20<<2), (int)0x3C); // U → B6
 
     // --- init parameter defaults ---
+    f0_pending   = 0;
     wavet_state  = 0;    // square
     vol_state    = 8;    // volume 8
     unison_state = 4;    // 4 voices
