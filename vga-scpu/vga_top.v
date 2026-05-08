@@ -70,14 +70,20 @@ assign speed_inc = (active_keys == 5'd0)  ? 3'd0 :
                    (active_keys <= 5'd3)  ? 3'd1 :
                    (active_keys <= 5'd5)  ? 3'd2 : 3'd4;
 
+// Pipeline register — breaks long popcount → anim_cnt combinational path
+reg [2:0] speed_inc_r;
+always @(posedge clk25 or posedge rst)
+    if (rst) speed_inc_r <= 3'd0;
+    else     speed_inc_r <= speed_inc;
+
 // anim_cnt wraps at 192 (= 6 sectors × 32) so the hue cycle is seamless
 reg [7:0] anim_cnt;
 always @(posedge clk25 or posedge rst)
     if (rst) anim_cnt <= 8'd0;
     else if (vsync_rise) begin
-        anim_cnt <= anim_cnt + speed_inc;
-        if (anim_cnt + speed_inc >= 8'd192)
-            anim_cnt <= anim_cnt + speed_inc - 8'd192;
+        anim_cnt <= anim_cnt + speed_inc_r;
+        if (anim_cnt + speed_inc_r >= 8'd192)
+            anim_cnt <= anim_cnt + speed_inc_r - 8'd192;
     end
 
 // ============================================================
@@ -92,8 +98,9 @@ VGA_Scan u_scan(.clk(clk25),.rst(rst),.row(row),.col(col),
 // ============================================================
 // 4. Key state latch + edge detection
 // ============================================================
+// key_state in clk25 domain — avoids CDC with popcount/anim_cnt/piano
 reg [20:0] key_state;
-always @(posedge clk)
+always @(posedge clk25)
     if (rst) key_state <= 21'b0;
     else if (vram_we) key_state <= vram_addr[20:0];
 assign vram_dout = key_state[1:0];
@@ -104,9 +111,11 @@ always @(posedge clk25)
     if (rst) prev_key <= 21'b0;
     else if (vsync_rise) prev_key <= key_state;
 
-wire [20:0] new_presses = key_state & ~prev_key;  // 0→1 edges this frame
+wire [20:0] new_presses = key_state & ~prev_key;
 
-// Priority encoder: lowest-indexed new press (0..20)
+wire any_new = |new_presses;
+
+// Priority encoder — same clock domain, synthesized as tree
 wire [4:0] first_new;
 assign first_new = new_presses[0]  ? 5'd0  :
                    new_presses[1]  ? 5'd1  :
@@ -129,8 +138,6 @@ assign first_new = new_presses[0]  ? 5'd0  :
                    new_presses[18] ? 5'd18 :
                    new_presses[19] ? 5'd19 :
                    new_presses[20] ? 5'd20 : 5'd0;
-
-wire any_new = |new_presses;
 
 // ============================================================
 // 5. Key-press history FIFO  (13 slots, oldest @ idx 0)
