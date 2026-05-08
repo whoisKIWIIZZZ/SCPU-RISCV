@@ -1,25 +1,16 @@
 `timescale 1ns / 1ps
 
 // =============================================================================
-// VGA_top — Refactored
+// VGA_top — Refactored (font 2x, ABC debug removed)
 //
 // Layout:
-//   Top-left     col[ 10, 169] row[  8,  47] — text labels
-//   Top-right    col[470, 677] row[  8,  15] — alphabet debug
-//   Centre       col[112, 527] row[220, 251] — dynamic MIDI key history
+//   Top-left     col[ 10, 330] row[  8,  88] — text labels (16px/char)
+//   Top-left     col[ 10, 202] row[ 88, 104] — ADDR hex display
+//   Centre       col[ 47, 593] row[190, 270] — piano keyboard (21 keys)
 //   Bottom-left  col[  0, 319] row[280, 479] — flowing RGB gradient
-//   Bottom-right col[496, 639] row[470, 477] — watermark
+//   Bottom-right col[384, 640] row[462, 478] — watermark
 //
-// Bugs fixed:
-//  1. Gradient flow: frame_cnt sampled vsync level (high ~418k cycles/frame),
-//     so the scroll value was essentially random per pixel — no coherent flow.
-//     FIX: edge-detect vsync rising edge → true once-per-frame anim_cnt.
-//  2. Gradient black artifacts: vertical alpha faded to 0 at region edges,
-//     outputting (0,0,0) instead of blending to background (1,1,2).
-//     FIX: blend gradient colour with background by alpha.
-//  3. MIDI display was static — a VRAM-driven bitmap with no time ordering.
-//     FIX: FIFO history of key‑press events displayed left (oldest) to
-//     right (newest); when the row is full new presses push out the oldest.
+// Gradient speed: popcount of key_state → 0=static, 1-3=slow, 4-5=med, 6+=fast
 // =============================================================================
 
 module VGA_top(
@@ -172,15 +163,15 @@ wire [7:0] font_data;
 font_rom u_font(.a(font_addr),.spo(font_data));
 
 // ============================================================
-// 7. TOP-LEFT TEXT  col[10,169] row[8,47]
+// 7. TOP-LEFT TEXT  col[10,330] row[8,88]   font 2x → 16px/char
 // ============================================================
-wire in_txt = (col>=10'd10)&&(col<10'd170)&&(row>=9'd8)&&(row<9'd48);
+wire in_txt = (col>=10'd10)&&(col<10'd330)&&(row>=9'd8)&&(row<9'd88);
 wire [9:0] tx = col - 10'd10;
 wire [8:0] ty = row - 9'd8;
-wire [2:0] txt_crow = ty[5:3];
-wire [4:0] txt_ccol = tx[7:3];
-wire [2:0] txt_py   = ty[2:0];
-wire [2:0] txt_px   = tx[2:0];
+wire [2:0] txt_crow = ty[6:4];
+wire [4:0] txt_ccol = tx[8:4];
+wire [2:0] txt_py   = ty[3:1];
+wire [2:0] txt_px   = tx[3:1];
 
     // ---- value-to-ASCII helpers ----
     function [7:0] digit_ch;
@@ -339,25 +330,14 @@ always @(*) begin
 end
 
 // ============================================================
-// 8. TOP-RIGHT ALPHABET DEBUG  A..Z
-//    col[470,677] row[8,15]   26x8px, bright yellow
+// 8. WATERMARK  "kiwiizzz & zoomy"   font 2x
+//    col[384,640] row[462,478]
 // ============================================================
-wire in_abc = (col>=10'd470)&&(col<10'd678)&&(row>=9'd8)&&(row<9'd16);
-wire [9:0] ax     = col - 10'd470;
-wire [4:0] abc_ci = ax[7:3];
-wire [2:0] abc_py = row[2:0];
-wire [2:0] abc_px = ax[2:0];
-wire [7:0] abc_ascii = 8'd65 + {3'd0, abc_ci};
-
-// ============================================================
-// 9. WATERMARK  "kiwiizzz & zoomy"
-//    col[496,639] row[470,477]
-// ============================================================
-wire in_wm = (col>=10'd496)&&(col<10'd640)&&(row>=9'd470)&&(row<9'd478);
-wire [9:0] wmx   = col - 10'd496;
-wire [4:0] wm_ci = wmx[7:3];
-wire [2:0] wm_py = row - 9'd470;
-wire [2:0] wm_px = wmx[2:0];
+wire in_wm = (col>=10'd384)&&(col<10'd640)&&(row>=9'd462)&&(row<9'd478);
+wire [9:0] wmx   = col - 10'd384;
+wire [4:0] wm_ci = wmx[8:4];
+wire [2:0] wm_py = (row - 9'd462)[3:1];
+wire [2:0] wm_px = wmx[3:1];
 
 function [7:0] wm_ch;
     input [4:0] ci;
@@ -440,7 +420,7 @@ wire [3:0] g_grad = g_blend[7:4];
 wire [3:0] b_grad = b_blend[7:4];
 
 // ============================================================
-// 11. PIANO KEYBOARD  col[47,593] row[190,270]
+// 9. PIANO KEYBOARD  col[47,593] row[190,270]
 //     21 white keys (C4..B6), each 26px wide × 80px tall
 //     Border: 1px black gap between keys
 //     Pressed: cyan highlight; Released: white
@@ -467,17 +447,16 @@ wire pno_border = (pno_sx == 10'd0) || (pno_sx == KEY_W-10'd1)
                || (pno_sy == 9'd0)  || (pno_sy == PNO_Y1-PNO_Y0-9'd1);
 
 // ============================================================
-// 12. vram_addr REAL-TIME HEX DISPLAY
-//     col[10,169] row[60,75]   text row below existing labels
-//     "ADDR: XXXXX"  (5 hex digits for 21-bit addr, 0x00000..0x1FFFF)
+// 11. vram_addr REAL-TIME HEX DISPLAY   font 2x
+//     col[10,202] row[88,104]   12 chars × 16px = 192px
 // ============================================================
-wire in_addr = (col >= 10'd10) && (col < 10'd10 + 10'd128)
-            && (row >= 9'd60)  && (row < 9'd68);
+wire in_addr = (col >= 10'd10) && (col < 10'd202)
+            && (row >= 9'd88)  && (row < 9'd104);
 
 wire [9:0] addr_rx  = col - 10'd10;
-wire [4:0] addr_ci  = addr_rx[7:3];   // char column 0..15
-wire [2:0] addr_py  = row - 9'd60;
-wire [2:0] addr_px  = addr_rx[2:0];
+wire [4:0] addr_ci  = addr_rx[7:4];
+wire [2:0] addr_py  = (row - 9'd88)[3:1];
+wire [2:0] addr_px  = addr_rx[3:1];
 
 function [7:0] hex_ch;
     input [3:0] nibble;
@@ -516,12 +495,10 @@ always @(*) begin
 end
 
 // ============================================================
-// 13. Font ROM address MUX  (updated)
+// 12. Font ROM address MUX
 // ============================================================
 always @(*) begin
-    if (in_abc)
-        font_addr = {abc_ascii, abc_py};
-    else if (in_wm)
+    if (in_wm)
         font_addr = {wm_ch(wm_ci), wm_py};
     else if (in_txt)
         font_addr = {txt_ascii, txt_py};
@@ -531,20 +508,16 @@ always @(*) begin
         font_addr = {8'h20, 3'b0};
 end
 reg [3:0] r_out, g_out, b_out; // final outputs before assign
-wire abc_on  = in_abc  && font_data[7 - abc_px];
 wire wm_on   = in_wm   && font_data[7 - wm_px];
 wire txt_on  = in_txt  && font_data[7 - txt_px];
 wire addr_on = in_addr && font_data[7 - addr_px];
 
 // ============================================================
-// 14. Final colour output  (updated)
+// 13. Final colour output
 // ============================================================
 always @(*) begin
     if (!active) begin
         r_out=4'h0; g_out=4'h0; b_out=4'h0;
-    end
-    else if (abc_on) begin           // yellow debug
-        r_out=4'hF; g_out=4'hF; b_out=4'h0;
     end
     else if (wm_on) begin            // grey watermark
         r_out=4'h7; g_out=4'h7; b_out=4'h7;
