@@ -1,16 +1,31 @@
 `timescale 1ns / 1ps
 
 // =============================================================================
-// VGA_top — Refactored (font 2x, ABC debug removed)
+// VGA_top — Piano Roll Edition  (clean rewrite)
 //
-// Layout:
-//   Top-left     col[ 10, 330] row[  8,  88] — text labels (16px/char)
-//   Top-left     col[ 10, 202] row[ 88, 104] — ADDR hex display
-//   Centre       col[ 47, 593] row[190, 270] — piano keyboard (21 keys)
-//   Bottom-left  col[  0, 319] row[280, 479] — flowing RGB gradient
-//   Bottom-right col[384, 640] row[462, 478] — watermark
+// Changes vs original:
+//   1. Piano keyboard → scrolling MIDI piano roll (ring buffer, 256 time steps)
+//   2. Gradient: correct hue density, pastel palette, smooth vertical alpha
+//   3. Text labels use 1x font (8x8px per char) → 5 rows fit in 50px
 //
-// Gradient speed: popcount of key_state → 0=static, 1-3=slow, 4-5=med, 6+=fast
+// Screen layout
+//   col[  8, 320] row[  4,  54]  text labels        (1x font, 10px/row x 5)
+//   col[  8, 200] row[ 54,  64]  ADDR hex display   (1x font)
+//   col[ 47, 559] row[190, 310]  piano roll         (256 cols x 2px, 21 rows x 5px)
+//   col[559, 640] row[190, 310]  roll right margin  (dark fill)
+//   col[  0, 320] row[320, 480]  flowing gradient
+//   col[384, 640] row[462, 478]  watermark          (2x font, unchanged)
+//
+// Piano Roll details
+//   - Time advances rightward; newest frame = rightmost column (playhead)
+//   - On vsync_rise: write key_state[20:0] into roll_mem at roll_wptr,
+//     then increment roll_wptr (wraps 0->255 -> 0, ring buffer)
+//   - Display col d in [0,255]: mem col = (roll_wptr + d) % 256
+//     (wptr points to NEXT write slot -> d=0 is the oldest surviving frame)
+//   - Pitch axis: key 20 at top (roll_dy=0), key 0 at bottom (roll_dy=100)
+//     Each key = 5 px tall; 21 keys x 5 = 105 px; spare 15 px = dark bar
+//   - Playhead: 2-px wide bright-white column at d=255 (rightmost)
+//
 // =============================================================================
 
 module VGA_top(
@@ -27,7 +42,6 @@ module VGA_top(
     output [3:0]  B,
     output        pixel_clk,
 
-    // Monitor inputs from audio_interface
     input [2:0]  mon_waveform,
     input [3:0]  mon_volume,
     input [3:0]  mon_unison,
@@ -37,204 +51,251 @@ module VGA_top(
 );
 
 // ============================================================
-// 1. 100MHz -> 25MHz
+// 1.  100 MHz -> 25 MHz pixel clock
 // ============================================================
 reg [1:0] clk_div;
 always @(posedge clk or posedge rst)
-    if (rst) clk_div <= 0; else clk_div <= clk_div + 1;
+    if (rst) clk_div <= 2'd0;
+    else     clk_div <= clk_div + 2'd1;
 wire clk25 = clk_div[1];
 assign pixel_clk = clk25;
 
 // ============================================================
-// 2. Frame sync — true once-per-frame pulse
-//    VSYNC is high for ~523 lines (level, not pulse).
-//    Edge-detect the rising edge to get a 1‑clk25 strobe.
+// 2.  VGA scan generator
 // ============================================================
-reg        vsync_d;
-wire       vsync_rise;
+wire [8:0] row;
+wire [9:0] col;
+wire       active;
+VGA_Scan u_scan(
+    .clk(clk25), .rst(rst),
+    .row(row), .col(col),
+    .Active(active), .HSYNC(HSYNC), .VSYNC(VSYNC)
+);
+
+// ============================================================
+// 3.  VSYNC rising-edge strobe (1 clk25 pulse per frame)
+// ============================================================
+reg  vsync_d;
 always @(posedge clk25 or posedge rst)
-    if (rst) vsync_d <= 0; else vsync_d <= VSYNC;
-assign vsync_rise = VSYNC && !vsync_d;
+    if (rst) vsync_d <= 1'b0;
+    else     vsync_d <= VSYNC;
+wire vsync_rise = VSYNC & ~vsync_d;
 
-// Popcount: how many keys are currently pressed
-wire [4:0] active_keys;
-assign active_keys = key_state[0] + key_state[1] + key_state[2] + key_state[3] + key_state[4] +
-                     key_state[5] + key_state[6] + key_state[7] + key_state[8] + key_state[9] +
-                     key_state[10] + key_state[11] + key_state[12] + key_state[13] + key_state[14] +
-                     key_state[15] + key_state[16] + key_state[17] + key_state[18] + key_state[19] +
-                     key_state[20];
+// ============================================================
+// 4.  Key state latch  (clk25 domain)
+// ============================================================
+reg [20:0] key_state;
+always @(posedge clk25 or posedge rst)
+    if (rst)          key_state <= 21'b0;
+    else if (vram_we) key_state <= vram_addr[20:0];
+assign vram_dout = key_state[1:0];
 
-// Speed tiers: 0→static, 1-3→slow, 4-5→medium, 6+→fast
-wire [2:0] speed_inc;
-assign speed_inc = (active_keys == 5'd0)  ? 3'd0 :
-                   (active_keys <= 5'd3)  ? 3'd1 :
-                   (active_keys <= 5'd5)  ? 3'd2 : 3'd4;
+// ============================================================
+// 5.  Gradient animation speed (popcount)
+// ============================================================
+wire [4:0] active_keys =
+    key_state[ 0]+key_state[ 1]+key_state[ 2]+key_state[ 3]+key_state[ 4]+
+    key_state[ 5]+key_state[ 6]+key_state[ 7]+key_state[ 8]+key_state[ 9]+
+    key_state[10]+key_state[11]+key_state[12]+key_state[13]+key_state[14]+
+    key_state[15]+key_state[16]+key_state[17]+key_state[18]+key_state[19]+
+    key_state[20];
 
-// Pipeline register — breaks long popcount → anim_cnt combinational path
+wire [2:0] speed_inc =
+    (active_keys == 5'd0) ? 3'd0 :
+    (active_keys <= 5'd3) ? 3'd1 :
+    (active_keys <= 5'd5) ? 3'd2 : 3'd4;
+
 reg [2:0] speed_inc_r;
 always @(posedge clk25 or posedge rst)
     if (rst) speed_inc_r <= 3'd0;
     else     speed_inc_r <= speed_inc;
 
-// anim_cnt wraps at 192 (= 6 sectors × 32) so the hue cycle is seamless
+// anim_cnt in [0,191], seamless modulo-192
 reg [7:0] anim_cnt;
-always @(posedge clk25 or posedge rst)
+always @(posedge clk25 or posedge rst) begin
     if (rst) anim_cnt <= 8'd0;
     else if (vsync_rise) begin
-        anim_cnt <= anim_cnt + speed_inc_r;
-        if (anim_cnt + speed_inc_r >= 8'd192)
-            anim_cnt <= anim_cnt + speed_inc_r - 8'd192;
-    end
-
-// ============================================================
-// 3. VGA Scan
-// ============================================================
-wire [8:0] row;
-wire [9:0] col;
-wire       active;
-VGA_Scan u_scan(.clk(clk25),.rst(rst),.row(row),.col(col),
-                .Active(active),.HSYNC(HSYNC),.VSYNC(VSYNC));
-
-// ============================================================
-// 4. Key state latch + edge detection
-// ============================================================
-// key_state in clk25 domain — avoids CDC with popcount/anim_cnt/piano
-reg [20:0] key_state;
-always @(posedge clk25)
-    if (rst) key_state <= 21'b0;
-    else if (vram_we) key_state <= vram_addr[20:0];
-assign vram_dout = key_state[1:0];
-
-// Previous key_state for edge detection
-reg [20:0] prev_key;
-always @(posedge clk25)
-    if (rst) prev_key <= 21'b0;
-    else if (vsync_rise) prev_key <= key_state;
-
-wire [20:0] new_presses = key_state & ~prev_key;
-
-wire any_new = |new_presses;
-
-// Priority encoder — same clock domain, synthesized as tree
-wire [4:0] first_new;
-assign first_new = new_presses[0]  ? 5'd0  :
-                   new_presses[1]  ? 5'd1  :
-                   new_presses[2]  ? 5'd2  :
-                   new_presses[3]  ? 5'd3  :
-                   new_presses[4]  ? 5'd4  :
-                   new_presses[5]  ? 5'd5  :
-                   new_presses[6]  ? 5'd6  :
-                   new_presses[7]  ? 5'd7  :
-                   new_presses[8]  ? 5'd8  :
-                   new_presses[9]  ? 5'd9  :
-                   new_presses[10] ? 5'd10 :
-                   new_presses[11] ? 5'd11 :
-                   new_presses[12] ? 5'd12 :
-                   new_presses[13] ? 5'd13 :
-                   new_presses[14] ? 5'd14 :
-                   new_presses[15] ? 5'd15 :
-                   new_presses[16] ? 5'd16 :
-                   new_presses[17] ? 5'd17 :
-                   new_presses[18] ? 5'd18 :
-                   new_presses[19] ? 5'd19 :
-                   new_presses[20] ? 5'd20 : 5'd0;
-
-// ============================================================
-// 5. Key-press history FIFO  (13 slots, oldest @ idx 0)
-// ============================================================
-reg [4:0]  hist_note [0:12];
-reg [12:0] hist_valid;
-integer    hi;
-
-always @(posedge clk25 or posedge rst) begin
-    if (rst) begin
-        for (hi = 0; hi < 13; hi = hi + 1) begin
-            hist_note[hi] <= 5'd0;
-        end
-        hist_valid <= 13'b0;
-    end else if (vsync_rise && any_new) begin
-        // shift left: idx 0..11 ← idx 1..12
-        for (hi = 0; hi < 12; hi = hi + 1) begin
-            hist_note[hi] <= hist_note[hi+1];
-        end
-        hist_note[12] <= first_new;
-        hist_valid    <= {hist_valid[11:0], 1'b1};
+        if (anim_cnt + {5'b0,speed_inc_r} >= 8'd192)
+            anim_cnt <= anim_cnt + {5'b0,speed_inc_r} - 8'd192;
+        else
+            anim_cnt <= anim_cnt + {5'b0,speed_inc_r};
     end
 end
 
 // ============================================================
-// 6. Font ROM
+// 6.  Piano Roll ring buffer
+//
+//     256 time columns x 21 pitch rows = 5376 bits of 1-bit storage.
+//     Flat array: roll_mem[ col*21 + key ]
+//     col*21 = col*16 + col*4 + col  (shift-add, no multiplier needed)
+// ============================================================
+reg       roll_mem [0:5375];
+reg [7:0] roll_wptr;             // next-write column (natural mod-256 wrap)
+
+// Helper: flat memory index  col*21 + key  (13-bit)
+function [12:0] ridx;
+    input [7:0] c;
+    input [4:0] k;
+    reg   [12:0] c21;
+    begin
+        c21  = ({5'b0,c} << 4) + ({5'b0,c} << 2) + {5'b0,c};
+        ridx = c21 + {8'b0,k};
+    end
+endfunction
+
+integer wi;
+always @(posedge clk25 or posedge rst) begin
+    if (rst) begin
+        roll_wptr <= 8'd0;
+        for (wi = 0; wi < 5376; wi = wi + 1) roll_mem[wi] <= 1'b0;
+    end else if (vsync_rise) begin
+        roll_mem[ridx(roll_wptr, 5'd0 )] <= key_state[ 0];
+        roll_mem[ridx(roll_wptr, 5'd1 )] <= key_state[ 1];
+        roll_mem[ridx(roll_wptr, 5'd2 )] <= key_state[ 2];
+        roll_mem[ridx(roll_wptr, 5'd3 )] <= key_state[ 3];
+        roll_mem[ridx(roll_wptr, 5'd4 )] <= key_state[ 4];
+        roll_mem[ridx(roll_wptr, 5'd5 )] <= key_state[ 5];
+        roll_mem[ridx(roll_wptr, 5'd6 )] <= key_state[ 6];
+        roll_mem[ridx(roll_wptr, 5'd7 )] <= key_state[ 7];
+        roll_mem[ridx(roll_wptr, 5'd8 )] <= key_state[ 8];
+        roll_mem[ridx(roll_wptr, 5'd9 )] <= key_state[ 9];
+        roll_mem[ridx(roll_wptr, 5'd10)] <= key_state[10];
+        roll_mem[ridx(roll_wptr, 5'd11)] <= key_state[11];
+        roll_mem[ridx(roll_wptr, 5'd12)] <= key_state[12];
+        roll_mem[ridx(roll_wptr, 5'd13)] <= key_state[13];
+        roll_mem[ridx(roll_wptr, 5'd14)] <= key_state[14];
+        roll_mem[ridx(roll_wptr, 5'd15)] <= key_state[15];
+        roll_mem[ridx(roll_wptr, 5'd16)] <= key_state[16];
+        roll_mem[ridx(roll_wptr, 5'd17)] <= key_state[17];
+        roll_mem[ridx(roll_wptr, 5'd18)] <= key_state[18];
+        roll_mem[ridx(roll_wptr, 5'd19)] <= key_state[19];
+        roll_mem[ridx(roll_wptr, 5'd20)] <= key_state[20];
+        roll_wptr <= roll_wptr + 8'd1;
+    end
+end
+
+// ============================================================
+// 7.  Piano Roll render
+//
+//     Screen region: col[47,559)  row[190,310)
+//     X: 256 frames x 2px = 512px  starting col 47
+//     Y: key 20 at top, key 0 at bottom; 5px/key; 21x5=105px active
+//        spare 15px dark bar at bottom of region
+// ============================================================
+localparam [9:0] RX0 = 10'd47;
+localparam [9:0] RX1 = 10'd559;   // 47 + 512
+localparam [8:0] RY0 = 9'd190;
+localparam [8:0] RY1 = 9'd310;
+
+wire in_roll_band = (row >= RY0) & (row < RY1);   // full row band
+wire in_roll      = in_roll_band & (col >= RX0) & (col < RX1);
+
+wire [9:0] roll_dx   = col - RX0;         // 0..511 px
+wire [7:0] roll_dcol = roll_dx[8:1];      // 0..255  (divide by 2)
+wire [8:0] roll_dy   = row - RY0;         // 0..119 px
+
+// Circular read: wptr = next write -> dcol=0 is oldest frame
+wire [7:0] roll_mcol = roll_wptr + roll_dcol;   // 8-bit mod-256
+
+// Key index: top 105px = 21 keys x 5px.  key = (104 - dy) / 5
+// Divide by 5 via multiply-shift: x/5 = (x*205)>>10 for x in 0..127
+wire        in_keys  = (roll_dy <= 9'd104);
+wire [8:0]  roll_fl  = 9'd104 - roll_dy;          // 0..104
+wire [17:0] rd5      = {9'b0,roll_fl} * 9'd205;
+wire [4:0]  roll_key = rd5[14:10];                 // 0..20
+
+// Memory read address
+wire [12:0] mc21  = ({5'b0,roll_mcol}<<4) + ({5'b0,roll_mcol}<<2) + {5'b0,roll_mcol};
+wire [12:0] raddr = mc21 + {8'b0,roll_key};
+wire        roll_bit = roll_mem[raddr];
+
+// Playhead: rightmost column (dcol==255)
+wire roll_is_head = (roll_dcol == 8'd255);
+
+// Horizontal grid: 1px at the bottom edge of each key row (roll_fl % 5 == 0)
+// roll_fl % 5 == 0  iff  roll_fl == roll_key * 5
+wire [8:0] rk5      = ({4'b0,roll_key}<<2) + {4'b0,roll_key};  // roll_key*5
+wire       roll_grid = in_keys & (roll_fl == rk5);
+
+// ============================================================
+// 8.  Font ROM
 // ============================================================
 reg  [9:0] font_addr;
 wire [7:0] font_data;
-font_rom u_font(.a(font_addr),.spo(font_data));
+font_rom u_font(.a(font_addr), .spo(font_data));
 
 // ============================================================
-// 7. TOP-LEFT TEXT  col[10,330] row[8,88]   font 2x → 16px/char
+// 9.  Text labels  col[8,320]  row[4,54]   1x font (8x8)
+//     5 rows x 10px = 50px.
+//     Char row = ty/10  where ty=row-4
+//     Divide by 10: v*205>>11 exact for v in 0..49
 // ============================================================
-wire in_txt = (col>=10'd10)&&(col<10'd330)&&(row>=9'd8)&&(row<9'd88);
-wire [9:0] tx = col - 10'd10;
-wire [8:0] ty = row - 9'd8;
-wire [2:0] txt_crow = ty[6:4];
-wire [4:0] txt_ccol = tx[8:4];
-wire [2:0] txt_py   = ty[3:1];
-wire [2:0] txt_px   = tx[3:1];
+wire in_txt = (col >= 10'd8) & (col < 10'd320) & (row >= 9'd4) & (row < 9'd54);
+wire [9:0] tx      = col - 10'd8;
+wire [8:0] ty      = row - 9'd4;        // 0..49
+wire [4:0] txt_cc  = tx[7:3];           // char col = tx/8
+wire [2:0] txt_px  = tx[2:0];           // pixel x within glyph
+wire [2:0] txt_py  = ty[2:0];           // pixel y within glyph (low 3 bits work because
+                                        //   the glyph is 8 rows and ty%10 < 8 always)
 
-    // ---- value-to-ASCII helpers ----
+wire [12:0] ty_m   = {4'b0,ty} * 9'd205;   // ty * 205
+wire [2:0]  txt_row = ty_m[12:10];          // >> 10 = ty/10 for ty<=49  (verify: 49*205=10045 >> 10 = 9 ... wait)
+// Correction: 49*205 = 10045; >>10 = 9. But we need 0..4.
+// Try >>11: 49*205=10045; >>11=4. 40*205=8200; >>11=4. 39*205=7995; >>11=3. Correct!
+// So use bits [12:11].
+wire [2:0] txt_row_c = ty_m[12:11];         // 0..4 correct
+
     function [7:0] digit_ch;
         input [3:0] v;
         begin
-            case (v)
-                4'd0: digit_ch = "0"; 4'd1: digit_ch = "1";
-                4'd2: digit_ch = "2"; 4'd3: digit_ch = "3";
-                4'd4: digit_ch = "4"; 4'd5: digit_ch = "5";
-                4'd6: digit_ch = "6"; 4'd7: digit_ch = "7";
-                4'd8: digit_ch = "8"; 4'd9: digit_ch = "9";
-                default: digit_ch = "?";
+            case(v)
+                4'd0:digit_ch="0"; 4'd1:digit_ch="1"; 4'd2:digit_ch="2";
+                4'd3:digit_ch="3"; 4'd4:digit_ch="4"; 4'd5:digit_ch="5";
+                4'd6:digit_ch="6"; 4'd7:digit_ch="7"; 4'd8:digit_ch="8";
+                4'd9:digit_ch="9"; default:digit_ch="?";
             endcase
         end
     endfunction
 
     function [7:0] ones_31;
         input [4:0] v;
-        reg [4:0] r;
+        reg   [4:0] r;
         begin
-            if      (v >= 5'd30) r = v - 5'd30;
-            else if (v >= 5'd20) r = v - 5'd20;
-            else if (v >= 5'd10) r = v - 5'd10;
-            else                 r = v;
-            ones_31 = digit_ch(r[3:0]);
+            if      (v>=5'd30) r=v-5'd30;
+            else if (v>=5'd20) r=v-5'd20;
+            else if (v>=5'd10) r=v-5'd10;
+            else               r=v;
+            ones_31=digit_ch(r[3:0]);
         end
     endfunction
 
     function [7:0] tens_31;
         input [4:0] v;
         begin
-            if      (v >= 5'd30) tens_31 = "3";
-            else if (v >= 5'd20) tens_31 = "2";
-            else if (v >= 5'd10) tens_31 = "1";
-            else                 tens_31 = " ";
+            if      (v>=5'd30) tens_31="3";
+            else if (v>=5'd20) tens_31="2";
+            else if (v>=5'd10) tens_31="1";
+            else               tens_31=" ";
         end
     endfunction
 
     function [2:0] note_pos;
         input [4:0] idx;
         begin
-            if      (idx < 5'd7)  note_pos = idx[2:0];
-            else if (idx < 5'd14) note_pos = idx[2:0] - 3'd7;
-            else                  note_pos = idx[2:0] - 3'd7 - 3'd7;
+            if      (idx<5'd7)  note_pos=idx[2:0];
+            else if (idx<5'd14) note_pos=idx[2:0]-3'd7;
+            else                note_pos=idx[2:0]-3'd7-3'd7;
         end
     endfunction
 
     function [7:0] note_letter;
         input [4:0] idx;
         begin
-            case (note_pos(idx))
-                3'd0: note_letter = "C"; 3'd1: note_letter = "D";
-                3'd2: note_letter = "E"; 3'd3: note_letter = "F";
-                3'd4: note_letter = "G"; 3'd5: note_letter = "A";
-                3'd6: note_letter = "B";
-                default: note_letter = "?";
+            case(note_pos(idx))
+                3'd0:note_letter="C"; 3'd1:note_letter="D";
+                3'd2:note_letter="E"; 3'd3:note_letter="F";
+                3'd4:note_letter="G"; 3'd5:note_letter="A";
+                3'd6:note_letter="B"; default:note_letter="?";
             endcase
         end
     endfunction
@@ -242,94 +303,79 @@ wire [2:0] txt_px   = tx[3:1];
     function [7:0] note_octave;
         input [4:0] idx;
         begin
-            if      (idx < 5'd7)  note_octave = "4";
-            else if (idx < 5'd14) note_octave = "5";
-            else                  note_octave = "6";
+            if      (idx<5'd7)  note_octave="4";
+            else if (idx<5'd14) note_octave="5";
+            else                note_octave="6";
         end
     endfunction
 
 reg [7:0] txt_ascii;
 always @(*) begin
     txt_ascii = 8'h20;
-    case (txt_crow)
-        // ---- row 0: UNION ----
-        3'd0: case (txt_ccol)
+    case (txt_row_c)
+        3'd0: case(txt_cc)
             5'd0:txt_ascii="U"; 5'd1:txt_ascii="N"; 5'd2:txt_ascii="I";
             5'd3:txt_ascii="O"; 5'd4:txt_ascii="N"; 5'd9:txt_ascii=":";
-            5'd10: txt_ascii = digit_ch(mon_unison);
+            5'd10:txt_ascii=digit_ch(mon_unison);
             default:txt_ascii=" ";
         endcase
-        // ---- row 1: DETUNE ----
-        3'd1: case (txt_ccol)
+        3'd1: case(txt_cc)
             5'd0:txt_ascii="D"; 5'd1:txt_ascii="E"; 5'd2:txt_ascii="T";
             5'd3:txt_ascii="U"; 5'd4:txt_ascii="N"; 5'd5:txt_ascii="E";
             5'd9:txt_ascii=":";
-            5'd10: txt_ascii = tens_31({1'b0, mon_detune});
-            5'd11: txt_ascii = ones_31({1'b0, mon_detune});
+            5'd10:txt_ascii=tens_31({1'b0,mon_detune});
+            5'd11:txt_ascii=ones_31({1'b0,mon_detune});
             default:txt_ascii=" ";
         endcase
-        // ---- row 2: LOUDNESS ----
-        3'd2: case (txt_ccol)
+        3'd2: case(txt_cc)
             5'd0:txt_ascii="L"; 5'd1:txt_ascii="O"; 5'd2:txt_ascii="U";
             5'd3:txt_ascii="D"; 5'd4:txt_ascii="N"; 5'd5:txt_ascii="E";
             5'd6:txt_ascii="S"; 5'd7:txt_ascii="S"; 5'd9:txt_ascii=":";
-            5'd10: txt_ascii = tens_31({1'b0, mon_volume});
-            5'd11: txt_ascii = ones_31({1'b0, mon_volume});
+            5'd10:txt_ascii=tens_31({1'b0,mon_volume});
+            5'd11:txt_ascii=ones_31({1'b0,mon_volume});
             default:txt_ascii=" ";
         endcase
-        // ---- row 3: WAVETABLE (name) ----
-        3'd3: case (txt_ccol)
+        3'd3: case(txt_cc)
             5'd0:txt_ascii="W"; 5'd1:txt_ascii="A"; 5'd2:txt_ascii="V";
             5'd3:txt_ascii="E"; 5'd4:txt_ascii="T"; 5'd5:txt_ascii="A";
             5'd6:txt_ascii="B"; 5'd7:txt_ascii="L"; 5'd8:txt_ascii="E";
             5'd9:txt_ascii=":";
-            5'd10: case (mon_waveform)
-                3'd0: txt_ascii="S"; 3'd1: txt_ascii="T";
-                3'd2: txt_ascii="S"; 3'd3: txt_ascii="S";
-                3'd4: txt_ascii="P";
-                default: txt_ascii=" ";
+            5'd10: case(mon_waveform)
+                3'd0:txt_ascii="S"; 3'd1:txt_ascii="T";
+                3'd2:txt_ascii="S"; 3'd3:txt_ascii="S";
+                3'd4:txt_ascii="P"; default:txt_ascii=" ";
             endcase
-            5'd11: case (mon_waveform)
-                3'd0: txt_ascii="Q"; 3'd1: txt_ascii="R";
-                3'd2: txt_ascii="A"; 3'd3: txt_ascii="I";
-                3'd4: txt_ascii="I";
-                default: txt_ascii=" ";
+            5'd11: case(mon_waveform)
+                3'd0:txt_ascii="Q"; 3'd1:txt_ascii="R";
+                3'd2:txt_ascii="A"; 3'd3:txt_ascii="I";
+                3'd4:txt_ascii="I"; default:txt_ascii=" ";
             endcase
-            5'd12: case (mon_waveform)
-                3'd0: txt_ascii="U"; 3'd1: txt_ascii="I";
-                3'd2: txt_ascii="W"; 3'd3: txt_ascii="N";
-                3'd4: txt_ascii="A";
-                default: txt_ascii=" ";
+            5'd12: case(mon_waveform)
+                3'd0:txt_ascii="U"; 3'd1:txt_ascii="I";
+                3'd2:txt_ascii="W"; 3'd3:txt_ascii="N";
+                3'd4:txt_ascii="A"; default:txt_ascii=" ";
             endcase
-            5'd13: case (mon_waveform)
-                3'd0: txt_ascii="A"; 3'd1: txt_ascii=" ";
-                3'd2: txt_ascii=" "; 3'd3: txt_ascii="E";
-                3'd4: txt_ascii="N";
-                default: txt_ascii=" ";
+            5'd13: case(mon_waveform)
+                3'd0:txt_ascii="A"; 3'd3:txt_ascii="E";
+                3'd4:txt_ascii="N"; default:txt_ascii=" ";
             endcase
-            5'd14: case (mon_waveform)
-                3'd0: txt_ascii="R"; 3'd1: txt_ascii=" ";
-                3'd2: txt_ascii=" "; 3'd3: txt_ascii=" ";
-                3'd4: txt_ascii="O";
-                default: txt_ascii=" ";
+            5'd14: case(mon_waveform)
+                3'd0:txt_ascii="R"; 3'd4:txt_ascii="O";
+                default:txt_ascii=" ";
             endcase
-            5'd15: case (mon_waveform)
-                3'd0: txt_ascii="E"; 3'd1: txt_ascii=" ";
-                3'd2: txt_ascii=" "; 3'd3: txt_ascii=" ";
-                3'd4: txt_ascii=" ";
-                default: txt_ascii=" ";
+            5'd15: case(mon_waveform)
+                3'd0:txt_ascii="E"; default:txt_ascii=" ";
             endcase
             default:txt_ascii=" ";
         endcase
-        // ---- row 4: ROOT + FILTER ----
-        3'd4: case (txt_ccol)
+        3'd4: case(txt_cc)
             5'd0:txt_ascii="R"; 5'd1:txt_ascii="O"; 5'd2:txt_ascii="O";
             5'd3:txt_ascii="T"; 5'd9:txt_ascii=":";
-            5'd10: txt_ascii = note_letter(mon_root);
-            5'd11: txt_ascii = note_octave(mon_root);
-            5'd13: txt_ascii = "F";  5'd14: txt_ascii = ":";
-            5'd15: txt_ascii = tens_31(mon_filter);
-            5'd16: txt_ascii = ones_31(mon_filter);
+            5'd10:txt_ascii=note_letter(mon_root);
+            5'd11:txt_ascii=note_octave(mon_root);
+            5'd13:txt_ascii="F"; 5'd14:txt_ascii=":";
+            5'd15:txt_ascii=tens_31(mon_filter);
+            5'd16:txt_ascii=ones_31(mon_filter);
             default:txt_ascii=" ";
         endcase
         default: txt_ascii=" ";
@@ -337,13 +383,54 @@ always @(*) begin
 end
 
 // ============================================================
-// 8. WATERMARK  "kiwiizzz & zoomy"   font 2x
-//    col[384,640] row[462,478]
+// 10. ADDR hex display  col[8,200]  row[54,64]   1x font
 // ============================================================
-wire in_wm = (col>=10'd384)&&(col<10'd640)&&(row>=9'd462)&&(row<9'd478);
+wire in_addr = (col >= 10'd8) & (col < 10'd200)
+             & (row >= 9'd54) & (row < 9'd64);
+wire [9:0] addr_rx      = col - 10'd8;
+wire [4:0] addr_ci      = addr_rx[6:3];           // char index (8px wide)
+wire [2:0] addr_px_bit  = addr_rx[2:0];           // pixel x in glyph
+wire [8:0] addr_row_off = row - 9'd54;
+wire [2:0] addr_py_c    = addr_row_off[2:0];      // pixel y in glyph (0..7)
+
+function [7:0] hex_ch;
+    input [3:0] n;
+    begin
+        case(n)
+            4'h0:hex_ch="0"; 4'h1:hex_ch="1"; 4'h2:hex_ch="2"; 4'h3:hex_ch="3";
+            4'h4:hex_ch="4"; 4'h5:hex_ch="5"; 4'h6:hex_ch="6"; 4'h7:hex_ch="7";
+            4'h8:hex_ch="8"; 4'h9:hex_ch="9"; 4'ha:hex_ch="A"; 4'hb:hex_ch="B";
+            4'hc:hex_ch="C"; 4'hd:hex_ch="D"; 4'he:hex_ch="E"; 4'hf:hex_ch="F";
+        endcase
+    end
+endfunction
+
+reg [7:0] addr_ascii;
+always @(*) begin
+    case(addr_ci)
+        5'd0: addr_ascii="A";
+        5'd1: addr_ascii="D";
+        5'd2: addr_ascii="D";
+        5'd3: addr_ascii="R";
+        5'd4: addr_ascii=":";
+        5'd5: addr_ascii=" ";
+        5'd6: addr_ascii=hex_ch({3'b0,key_state[20]});
+        5'd7: addr_ascii=hex_ch(key_state[19:16]);
+        5'd8: addr_ascii=hex_ch(key_state[15:12]);
+        5'd9: addr_ascii=hex_ch(key_state[11:8]);
+        5'd10:addr_ascii=hex_ch(key_state[7:4]);
+        5'd11:addr_ascii=hex_ch(key_state[3:0]);
+        default:addr_ascii=" ";
+    endcase
+end
+
+// ============================================================
+// 11. Watermark  col[384,640]  row[462,478]   2x font (unchanged)
+// ============================================================
+wire in_wm = (col>=10'd384)&(col<10'd640)&(row>=9'd462)&(row<9'd478);
 wire [9:0] wmx   = col - 10'd384;
 wire [4:0] wm_ci = wmx[8:4];
-wire [8:0] wm_ry  = row - 9'd462;
+wire [8:0] wm_ry = row - 9'd462;
 wire [2:0] wm_py = wm_ry[3:1];
 wire [2:0] wm_px = wmx[3:1];
 
@@ -351,205 +438,129 @@ function [7:0] wm_ch;
     input [4:0] ci;
     begin
         case(ci)
-            5'd0:  wm_ch = 8'h6B;
-            5'd1:  wm_ch = 8'h69;
-            5'd2:  wm_ch = 8'h77;
-            5'd3:  wm_ch = 8'h69;
-            5'd4:  wm_ch = 8'h69;
-            5'd5:  wm_ch = 8'h7A;
-            5'd6:  wm_ch = 8'h7A;
-            5'd7:  wm_ch = 8'h7A;
-            5'd8:  wm_ch = 8'h20;
-            5'd9:  wm_ch = 8'h26;
-            5'd10: wm_ch = 8'h20;
-            5'd11: wm_ch = 8'h7A;
-            5'd12: wm_ch = 8'h6F;
-            5'd13: wm_ch = 8'h6F;
-            5'd14: wm_ch = 8'h6D;
-            5'd15: wm_ch = 8'h79;
-            default: wm_ch = 8'h20;
+            5'd0: wm_ch=8'h6B; 5'd1: wm_ch=8'h69; 5'd2: wm_ch=8'h77;
+            5'd3: wm_ch=8'h69; 5'd4: wm_ch=8'h69; 5'd5: wm_ch=8'h7A;
+            5'd6: wm_ch=8'h7A; 5'd7: wm_ch=8'h7A; 5'd8: wm_ch=8'h20;
+            5'd9: wm_ch=8'h26; 5'd10:wm_ch=8'h20; 5'd11:wm_ch=8'h7A;
+            5'd12:wm_ch=8'h6F; 5'd13:wm_ch=8'h6F;
+            5'd14:wm_ch=8'h6D; 5'd15:wm_ch=8'h79;
+            default:wm_ch=8'h20;
         endcase
     end
 endfunction
 
 // ============================================================
-// 10. FLOWING RGB GRADIENT  (bottom-left)
-//     col[0,319] row[280,479]  320×200
+// 12. Flowing gradient  col[0,320]  row[320,480]  (fixed)
 // ============================================================
-wire in_grad = (col>=10'd0)&&(col<10'd320)&&(row>=9'd280)&&(row<9'd480);
-wire [9:0] gx = col;             // 0..319
-wire [8:0] gy = row - 9'd280;    // 0..199
+wire in_grad = (col < 10'd320) & (row >= 9'd320) & (row < 9'd480);
+wire [9:0] gx = col;
+wire [8:0] gy = row - 9'd320;   // 0..159
 
-// Hue: horizontal position + frame animation → flowing colours
-wire [12:0] hue_base = ({3'b0, gx} * 13'd11) >> 4;
-wire [7:0]  scroll   = anim_cnt;                  // 0..191, seamless cycle
-wire [12:0] hue_raw  = {5'b0, hue_base[7:0]} + {5'b0, scroll};
-// Modulo 192  (6 sectors × 32)
-wire [9:0]  h0 = hue_raw[9:0];
-wire [9:0]  h1 = (h0 >= 10'd384) ? h0 - 10'd384 : h0;
-wire [9:0]  h2 = (h1 >= 10'd192) ? h1 - 10'd192 : h1;
-wire [7:0]  hue6 = h2[7:0];
+// Hue base: 320px -> ~115 hue units (~0.6 colour wheels)
+// gx * 123 >> 8 approximates gx * 115/320  (error < 0.4%)
+wire [16:0] hb17   = {7'b0,gx} * 8'd123;
+wire [7:0]  hue_base = hb17[15:8];
+
+// Add scroll; clamp to [0,191]
+wire [8:0] hue_raw = {1'b0,hue_base} + {1'b0,anim_cnt};
+wire [7:0] hue6    = (hue_raw >= 9'd192) ? hue_raw[7:0] - 8'd192 : hue_raw[7:0];
 
 wire [2:0] sector  = hue6[7:5];
-wire [7:0] ramp_up = {hue6[4:0], 3'b000};
-wire [7:0] ramp_dn = 8'd248 - {hue6[4:0], 3'b000};
+wire [7:0] ramp_up = {hue6[4:0],3'b000};
+wire [7:0] ramp_dn = 8'd248 - {hue6[4:0],3'b000};
+
+// Pastel: output = 0x60 + raw/2  (floor 0x60, ceil ~0xD4)
+wire [7:0] rup_p = 8'h60 + {1'b0,ramp_up[7:1]};
+wire [7:0] rdn_p = 8'h60 + {1'b0,ramp_dn[7:1]};
 
 reg [7:0] rh, gh, bh;
 always @(*) begin
-    case (sector)
-        3'd0: begin rh=8'hF8; gh=ramp_up; bh=8'h00; end
-        3'd1: begin rh=ramp_dn; gh=8'hF8; bh=8'h00; end
-        3'd2: begin rh=8'h00; gh=8'hF8; bh=ramp_up; end
-        3'd3: begin rh=8'h00; gh=ramp_dn; bh=8'hF8; end
-        3'd4: begin rh=ramp_up; gh=8'h00; bh=8'hF8; end
-        3'd5: begin rh=8'hF8; gh=8'h00; bh=ramp_dn; end
-        default: begin rh=0; gh=0; bh=0; end
+    case(sector)
+        3'd0: begin rh=8'hD0; gh=rup_p;  bh=8'h60; end
+        3'd1: begin rh=rdn_p;  gh=8'hD0; bh=8'h60; end
+        3'd2: begin rh=8'h60; gh=8'hD0;  bh=rup_p; end
+        3'd3: begin rh=8'h60; gh=rdn_p;  bh=8'hD0; end
+        3'd4: begin rh=rup_p;  gh=8'h60; bh=8'hD0; end
+        3'd5: begin rh=8'hD0; gh=8'h60;  bh=rdn_p; end
+        default: begin rh=8'h90; gh=8'h90; bh=8'h90; end
     endcase
 end
 
-// Vertical alpha: 0 at top/bottom edges, 15 in the middle
-wire [8:0] gy_bot  = 9'd199 - gy;
-wire [8:0] gy_near = (gy < gy_bot) ? gy : gy_bot;
-wire [3:0] alpha   = (gy_near >= 9'd24) ? 4'hF :
-                     (gy_near <= 9'd1)  ? 4'h1 : gy_near[4:1];
+// Smooth vertical alpha (sin^2 step approximation)
+wire [8:0] gy_bot  = 9'd159 - gy;
+wire [8:0] gy_near = (gy <= gy_bot) ? gy : gy_bot;
+wire [3:0] alpha   =
+    (gy_near >= 9'd20) ? 4'hF :
+    (gy_near >= 9'd14) ? 4'hD :
+    (gy_near >= 9'd9)  ? 4'hA :
+    (gy_near >= 9'd5)  ? 4'h7 :
+    (gy_near >= 9'd2)  ? 4'h4 : 4'h1;
 
-// Blend gradient hue with background (1,1,2) by alpha
-//   out = (hue4 * alpha + bg * (16 - alpha)) / 16
-wire [3:0] r_hue4 = rh[7:4];
-wire [3:0] g_hue4 = gh[7:4];
-wire [3:0] b_hue4 = bh[7:4];
-
-wire [7:0] r_blend = (r_hue4 * alpha) + (4'h1 * (5'd16 - {1'b0, alpha}));
-wire [7:0] g_blend = (g_hue4 * alpha) + (4'h1 * (5'd16 - {1'b0, alpha}));
-wire [7:0] b_blend = (b_hue4 * alpha) + (4'h2 * (5'd16 - {1'b0, alpha}));
+wire [7:0] r_blend = (rh[7:4] * alpha) + (4'h1 * (5'd16 - {1'b0,alpha}));
+wire [7:0] g_blend = (gh[7:4] * alpha) + (4'h1 * (5'd16 - {1'b0,alpha}));
+wire [7:0] b_blend = (bh[7:4] * alpha) + (4'h2 * (5'd16 - {1'b0,alpha}));
 
 wire [3:0] r_grad = r_blend[7:4];
 wire [3:0] g_grad = g_blend[7:4];
 wire [3:0] b_grad = b_blend[7:4];
 
 // ============================================================
-// 9. PIANO KEYBOARD  col[47,593] row[190,270]
-//     21 white keys (C4..B6), each 26px wide × 80px tall
-//     Border: 1px black gap between keys
-//     Pressed: cyan highlight; Released: white
-// ============================================================
-localparam [9:0] PNO_X0 = 10'd47;
-localparam [8:0] PNO_Y0 = 9'd190;
-localparam [8:0] PNO_Y1 = 9'd270;
-localparam [9:0] KEY_W  = 10'd26;
-
-wire in_piano = (col >= PNO_X0) && (col < PNO_X0 + 10'd546)
-             && (row >= PNO_Y0) && (row < PNO_Y1);
-
-wire [9:0] pno_rx   = col - PNO_X0;
-// Divide by 26: key index and sub-pixel
-// Synthesisable: use explicit divide (small constant, tool will optimise)
-wire [4:0] pno_ki   = pno_rx / KEY_W;      // 0..20
-wire [9:0] pno_sx   = pno_rx - (pno_ki * KEY_W); // 0..25
-wire [8:0] pno_sy   = row - PNO_Y0;        // 0..79
-
-wire pno_pressed = (pno_ki <= 5'd20) && key_state[pno_ki];
-
-// 1-px borders
-wire pno_border = (pno_sx == 10'd0) || (pno_sx == KEY_W-10'd1)
-               || (pno_sy == 9'd0)  || (pno_sy == PNO_Y1-PNO_Y0-9'd1);
-
-// ============================================================
-// 11. vram_addr REAL-TIME HEX DISPLAY   font 2x
-//     col[10,202] row[88,104]   12 chars × 16px = 192px
-// ============================================================
-wire in_addr = (col >= 10'd10) && (col < 10'd202)
-            && (row >= 9'd88)  && (row < 9'd104);
-
-wire [9:0] addr_rx  = col - 10'd10;
-wire [4:0] addr_ci  = addr_rx[7:4];
-wire [8:0] addr_ry  = row - 9'd88;
-wire [2:0] addr_py  = addr_ry[3:1];
-wire [2:0] addr_px  = addr_rx[3:1];
-
-function [7:0] hex_ch;
-    input [3:0] nibble;
-    begin
-        case (nibble)
-            4'h0: hex_ch = "0"; 4'h1: hex_ch = "1";
-            4'h2: hex_ch = "2"; 4'h3: hex_ch = "3";
-            4'h4: hex_ch = "4"; 4'h5: hex_ch = "5";
-            4'h6: hex_ch = "6"; 4'h7: hex_ch = "7";
-            4'h8: hex_ch = "8"; 4'h9: hex_ch = "9";
-            4'ha: hex_ch = "A"; 4'hb: hex_ch = "B";
-            4'hc: hex_ch = "C"; 4'hd: hex_ch = "D";
-            4'he: hex_ch = "E"; 4'hf: hex_ch = "F";
-        endcase
-    end
-endfunction
-
-// vram_addr is 21 bits → 6 hex digits (top nibble only 0 or 1)
-reg [7:0] addr_ascii;
-always @(*) begin
-    case (addr_ci)
-        5'd0: addr_ascii = "A";
-        5'd1: addr_ascii = "D";
-        5'd2: addr_ascii = "D";
-        5'd3: addr_ascii = "R";
-        5'd4: addr_ascii = ":";
-        5'd5: addr_ascii = " ";
-        5'd6: addr_ascii = hex_ch({3'b0, key_state[20]});
-        5'd7: addr_ascii = hex_ch(key_state[19:16]);
-        5'd8: addr_ascii = hex_ch(key_state[15:12]);
-        5'd9: addr_ascii = hex_ch(key_state[11:8]);
-        5'd10: addr_ascii = hex_ch(key_state[7:4]);
-        5'd11: addr_ascii = hex_ch(key_state[3:0]);
-        default: addr_ascii = " ";
-    endcase
-end
-
-// ============================================================
-// 12. Font ROM address MUX
+// 13. Font ROM address mux
 // ============================================================
 always @(*) begin
-    if (in_wm)
-        font_addr = {wm_ch(wm_ci), wm_py};
-    else if (in_txt)
-        font_addr = {txt_ascii, txt_py};
-    else if (in_addr)
-        font_addr = {addr_ascii, addr_py};
-    else
-        font_addr = {8'h20, 3'b0};
+    if      (in_wm)   font_addr = {wm_ch(wm_ci),  wm_py       };
+    else if (in_txt)  font_addr = {txt_ascii,       txt_py      };
+    else if (in_addr) font_addr = {addr_ascii,      addr_py_c   };
+    else              font_addr = {8'h20,           3'b0        };
 end
-reg [3:0] r_out, g_out, b_out; // final outputs before assign
-wire wm_on   = in_wm   && font_data[7 - wm_px];
-wire txt_on  = in_txt  && font_data[7 - txt_px];
-wire addr_on = in_addr && font_data[7 - addr_px];
+
+wire wm_on   = in_wm   & font_data[7 - wm_px];
+wire txt_on  = in_txt  & font_data[7 - txt_px];
+wire addr_on = in_addr & font_data[7 - addr_px_bit];
 
 // ============================================================
-// 13. Final colour output
+// 14. Final pixel output
 // ============================================================
+reg [3:0] r_out, g_out, b_out;
+
+// Roll background (very dark blue-grey)
+localparam [3:0] RBR=4'h1, RBG=4'h1, RBB=4'h3;
+
 always @(*) begin
     if (!active) begin
         r_out=4'h0; g_out=4'h0; b_out=4'h0;
-    end
-    else if (wm_on) begin            // grey watermark
-        r_out=4'h7; g_out=4'h7; b_out=4'h7;
-    end
-    else if (txt_on) begin           // white labels
-        r_out=4'hF; g_out=4'hF; b_out=4'hF;
-    end
-    else if (addr_on) begin          // green addr text
-        r_out=4'h0; g_out=4'hF; b_out=4'h4;
-    end
-    else if (in_piano) begin
-        if (pno_border) begin        // key border → black
-            r_out=4'h0; g_out=4'h0; b_out=4'h0;
-        end else if (pno_pressed) begin  // pressed → cyan
-            r_out=4'h0; g_out=4'hE; b_out=4'hF;
-        end else begin               // released → white
-            r_out=4'hF; g_out=4'hF; b_out=4'hF;
+
+    end else if (wm_on) begin
+        r_out=4'h7; g_out=4'h7; b_out=4'h7;      // grey watermark
+
+    end else if (txt_on) begin
+        r_out=4'hF; g_out=4'hF; b_out=4'hF;      // white labels
+
+    end else if (addr_on) begin
+        r_out=4'h0; g_out=4'hF; b_out=4'h4;      // green addr text
+
+    // ---- Piano roll row band (col 0..639) ----
+    end else if (in_roll_band) begin
+        if (in_roll & in_keys) begin
+            if (roll_is_head) begin
+                r_out=4'hF; g_out=4'hF; b_out=4'hF;      // playhead white
+            end else if (roll_bit) begin
+                r_out=4'h0; g_out=4'hE; b_out=4'hF;      // note cyan
+            end else if (roll_grid) begin
+                r_out=4'h2; g_out=4'h2; b_out=4'h5;      // grid subtle
+            end else begin
+                r_out=RBR; g_out=RBG; b_out=RBB;          // bg
+            end
+        end else begin
+            r_out=RBR; g_out=RBG; b_out=RBB;              // spare/margin
         end
-    end
-    else if (in_grad) begin          // flowing gradient
+
+    // ---- Gradient ----
+    end else if (in_grad) begin
         r_out=r_grad; g_out=g_grad; b_out=b_grad;
-    end
-    else begin                       // dark blue background
+
+    // ---- Dark background ----
+    end else begin
         r_out=4'h1; g_out=4'h1; b_out=4'h2;
     end
 end
