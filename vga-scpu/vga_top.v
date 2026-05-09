@@ -17,14 +17,11 @@
 //   col[384, 640] row[462, 478]  watermark          (2x font, unchanged)
 //
 // Piano Roll details
-//   - Time advances rightward; newest frame = rightmost column (playhead)
-//   - On vsync_rise: write key_state[20:0] into roll_mem at roll_wptr,
-//     then increment roll_wptr (wraps 0->255 -> 0, ring buffer)
-//   - Display col d in [0,255]: mem col = (roll_wptr + d) % 256
-//     (wptr points to NEXT write slot -> d=0 is the oldest surviving frame)
-//   - Pitch axis: key 20 at top (roll_dy=0), key 0 at bottom (roll_dy=100)
-//     Each key = 5 px tall; 21 keys x 5 = 105 px; spare 15 px = dark bar
-//   - Playhead: 2-px wide bright-white column at d=255 (rightmost)
+//   - 21 SRL shift-registers, one per key (256 bits each, ~8 LUTs/key)
+//   - On vsync_rise: shift key_state[k] into bit 0; oldest bit 255 drops off
+//   - Display: roll_sh[roll_key][~roll_dcol] — dcol=255→bit0 (newest)
+//   - Pitch axis: key 20 at top, key 0 at bottom; 5px/key; 21x5=105px
+//   - Playhead: 2-px wide bright-white column at dcol=255 (rightmost)
 //
 // =============================================================================
 
@@ -123,54 +120,26 @@ always @(posedge clk25 or posedge rst) begin
 end
 
 // ============================================================
-// 6.  Piano Roll ring buffer
+// 6.  Piano Roll — 21 SRL shift registers (no reset, no addr mux)
 //
-//     256 time columns x 21 pitch rows = 5376 bits of 1-bit storage.
-//     Flat array: roll_mem[ col*21 + key ]
-//     col*21 = col*16 + col*4 + col  (shift-add, no multiplier needed)
+//     Each key has a 256-bit shift register.  On vsync_rise, shift
+//     key_state[k] into bit 0; all bits shift left (0→1→…→255 drops).
+//     Bit 0 = newest frame, bit 255 = oldest (256 frames ago).
+//
+//     Display read: roll_sh[roll_key][~roll_dcol]
+//       dcol=255 (playhead) → inv=0  → bit 0  (newest)
+//       dcol=0   (leftmost) → inv=255 → bit 255 (oldest)
+//
+//     Vivado maps 256-bit shift regs to SRL32 chains (~8 LUTs each).
+//     No reset → no reset fanout, no 5376:1 mux, no write-address calc.
 // ============================================================
-reg       roll_mem [0:5375];
-reg [7:0] roll_wptr;             // next-write column (natural mod-256 wrap)
+reg [255:0] roll_sh [0:20];
 
-// Helper: flat memory index  col*21 + key  (13-bit)
-function [12:0] ridx;
-    input [7:0] c;
-    input [4:0] k;
-    reg   [12:0] c21;
-    begin
-        c21  = ({5'b0,c} << 4) + ({5'b0,c} << 2) + {5'b0,c};
-        ridx = c21 + {8'b0,k};
-    end
-endfunction
-
-integer wi;
-always @(posedge clk25 or posedge rst) begin
-    if (rst) begin
-        roll_wptr <= 8'd0;
-        for (wi = 0; wi < 5376; wi = wi + 1) roll_mem[wi] <= 1'b0;
-    end else if (vsync_rise) begin
-        roll_mem[ridx(roll_wptr, 5'd0 )] <= key_state[ 0];
-        roll_mem[ridx(roll_wptr, 5'd1 )] <= key_state[ 1];
-        roll_mem[ridx(roll_wptr, 5'd2 )] <= key_state[ 2];
-        roll_mem[ridx(roll_wptr, 5'd3 )] <= key_state[ 3];
-        roll_mem[ridx(roll_wptr, 5'd4 )] <= key_state[ 4];
-        roll_mem[ridx(roll_wptr, 5'd5 )] <= key_state[ 5];
-        roll_mem[ridx(roll_wptr, 5'd6 )] <= key_state[ 6];
-        roll_mem[ridx(roll_wptr, 5'd7 )] <= key_state[ 7];
-        roll_mem[ridx(roll_wptr, 5'd8 )] <= key_state[ 8];
-        roll_mem[ridx(roll_wptr, 5'd9 )] <= key_state[ 9];
-        roll_mem[ridx(roll_wptr, 5'd10)] <= key_state[10];
-        roll_mem[ridx(roll_wptr, 5'd11)] <= key_state[11];
-        roll_mem[ridx(roll_wptr, 5'd12)] <= key_state[12];
-        roll_mem[ridx(roll_wptr, 5'd13)] <= key_state[13];
-        roll_mem[ridx(roll_wptr, 5'd14)] <= key_state[14];
-        roll_mem[ridx(roll_wptr, 5'd15)] <= key_state[15];
-        roll_mem[ridx(roll_wptr, 5'd16)] <= key_state[16];
-        roll_mem[ridx(roll_wptr, 5'd17)] <= key_state[17];
-        roll_mem[ridx(roll_wptr, 5'd18)] <= key_state[18];
-        roll_mem[ridx(roll_wptr, 5'd19)] <= key_state[19];
-        roll_mem[ridx(roll_wptr, 5'd20)] <= key_state[20];
-        roll_wptr <= roll_wptr + 8'd1;
+integer rk;
+always @(posedge clk25) begin
+    if (vsync_rise) begin
+        for (rk = 0; rk < 21; rk = rk + 1)
+            roll_sh[rk] <= {roll_sh[rk][254:0], key_state[rk]};
     end
 end
 
@@ -187,33 +156,27 @@ localparam [9:0] RX1 = 10'd559;   // 47 + 512
 localparam [8:0] RY0 = 9'd190;
 localparam [8:0] RY1 = 9'd310;
 
-wire in_roll_band = (row >= RY0) & (row < RY1);   // full row band
+wire in_roll_band = (row >= RY0) & (row < RY1);
 wire in_roll      = in_roll_band & (col >= RX0) & (col < RX1);
 
 wire [9:0] roll_dx   = col - RX0;         // 0..511 px
 wire [7:0] roll_dcol = roll_dx[8:1];      // 0..255  (divide by 2)
 wire [8:0] roll_dy   = row - RY0;         // 0..119 px
 
-// Circular read: wptr = next write -> dcol=0 is oldest frame
-wire [7:0] roll_mcol = roll_wptr + roll_dcol;   // 8-bit mod-256
-
 // Key index: top 105px = 21 keys x 5px.  key = (104 - dy) / 5
-// Divide by 5 via multiply-shift: x/5 = (x*205)>>10 for x in 0..127
 wire        in_keys  = (roll_dy <= 9'd104);
 wire [8:0]  roll_fl  = 9'd104 - roll_dy;          // 0..104
 wire [17:0] rd5      = {9'b0,roll_fl} * 9'd205;
 wire [4:0]  roll_key = rd5[14:10];                 // 0..20
 
-// Memory read address
-wire [12:0] mc21  = ({5'b0,roll_mcol}<<4) + ({5'b0,roll_mcol}<<2) + {5'b0,roll_mcol};
-wire [12:0] raddr = mc21 + {8'b0,roll_key};
-wire        roll_bit = roll_mem[raddr];
+// Read direct from SRL shift register: bit 0=newest, bit 255=oldest
+// dcol=255 (playhead) → ~dcol=0 → bit 0;  dcol=0 → ~dcol=255 → bit 255
+wire roll_bit = roll_sh[roll_key][~roll_dcol];
 
 // Playhead: rightmost column (dcol==255)
 wire roll_is_head = (roll_dcol == 8'd255);
 
-// Horizontal grid: 1px at the bottom edge of each key row (roll_fl % 5 == 0)
-// roll_fl % 5 == 0  iff  roll_fl == roll_key * 5
+// Horizontal grid: 1px at the bottom edge of each key row
 wire [8:0] rk5      = ({4'b0,roll_key}<<2) + {4'b0,roll_key};  // roll_key*5
 wire       roll_grid = in_keys & (roll_fl == rk5);
 
