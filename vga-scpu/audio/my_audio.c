@@ -22,6 +22,11 @@ void Entry()
 #define AUDIOPIANO_ADDR     0xB4000000   // reg 0x04: piano params
 #define VGA_ADDR            0xC0000000
 #define SD_CARD_ADDR        0xD0000000
+#define SD_STATUS           (SD_CARD_ADDR + 0x0)
+#define SD_BLK_ADDR         (SD_CARD_ADDR + 0x4)
+#define SD_DATA_ADDR        (SD_CARD_ADDR + 0x8)
+#define SD_WORD_ADDR        (SD_CARD_ADDR + 0xC)
+#define SD_BLOCK_SIZE       128
 
 // =============================================================================
 // CPU-local variables (carefully spaced to avoid conflicts)
@@ -52,6 +57,11 @@ void Entry()
 #define piano_tail          (*(volatile uint8_t *)0x000001AC)
 #define piano_noise         (*(volatile uint8_t *)0x000001B0)
 
+// --- sd test trigger ---
+#define FLAG_NONE           0
+#define FLAG_SD_TEST        1
+#define sd_flag             (*(volatile uint8_t *)0x000001B4)
+
 // =============================================================================
 // Forward declarations
 // =============================================================================
@@ -65,6 +75,11 @@ void write_piano();
 // =============================================================================
 // Helpers
 // =============================================================================
+void read(int addr,int *data)
+{
+    int *p=(int *)addr;
+    *data=*p;
+}
 void write(int addr,int data)
 {
     int *p=(int *)addr;
@@ -229,6 +244,12 @@ __attribute__((interrupt)) void handler()
                 adsr_rel += 16;
                 adsr_changed = 1;
                 break;
+
+            // ---- SD test ----
+            case 0x5A: // Enter — trigger SD card read/write test
+                sd_flag = FLAG_SD_TEST;
+                write(DISPLAY_ADDR, 0x8B5179); // "buSY"
+                break;
         }
 
         if (ctrl_changed)  write_ctrl();
@@ -338,6 +359,7 @@ void init(){
     piano_noise  = 128;
 
     f0_pending=0;
+    sd_flag = FLAG_NONE;
     // --- push all registers ---
     write(DISPLAY_BASE,      (int)0);
     write(AUDIONOTE_ADDR,    (int)0);   // no notes active
@@ -350,7 +372,11 @@ void init(){
 void main()
 {
     init();
-    begin:
-    goto begin;
+    loop:
+    if (sd_flag == FLAG_SD_TEST) {
+        sd_test();
+        sd_flag = FLAG_NONE;
+    }
+    goto loop;
 }
 #pragma GCC pop_options
