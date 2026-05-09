@@ -423,7 +423,7 @@ wire [31:0] pc_after_jump;
 mux u_mux_jump(
     .x(pc_after_correct),
     .y(jump_target),
-    .signal(is_jump),
+    .signal(i   s_jump),
     .z(pc_after_jump)
 );
 
