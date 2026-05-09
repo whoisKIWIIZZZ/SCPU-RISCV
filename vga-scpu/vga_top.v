@@ -79,12 +79,28 @@ always @(posedge clk25 or posedge rst)
 wire vsync_rise = VSYNC & ~vsync_d;
 
 // ============================================================
-// 4.  Key state latch  (clk25 domain)
+// 4.  Key state latch  (CDC-safe: vram_we/vram_addr from CPU domain)
 // ============================================================
+// 2-stage synchronizer on vram_we — eliminates metastability
+reg        vram_we_s1, vram_we_s2;
+reg [20:0] vram_addr_r;               // registered copy in clk25 domain
+always @(posedge clk25 or posedge rst) begin
+    if (rst) begin
+        vram_we_s1  <= 1'b0;
+        vram_we_s2  <= 1'b0;
+        vram_addr_r <= 21'b0;
+    end else begin
+        vram_we_s1  <= vram_we;
+        vram_we_s2  <= vram_we_s1;
+        vram_addr_r <= vram_addr[20:0];
+    end
+end
+
+// key_state latched from synchronized, registered copies
 reg [20:0] key_state;
 always @(posedge clk25 or posedge rst)
     if (rst)          key_state <= 21'b0;
-    else if (vram_we) key_state <= vram_addr[20:0];
+    else if (vram_we_s2) key_state <= vram_addr_r;
 assign vram_dout = key_state[1:0];
 
 // ============================================================
