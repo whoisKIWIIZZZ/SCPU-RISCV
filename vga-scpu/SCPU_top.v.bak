@@ -1,7 +1,6 @@
 `timescale 1ns/1ps
 module main(btn_i, clk, sw_i, rstn, led_o, disp_an_o, disp_seg_o,
-            VGA_HSYNC, VGA_VSYNC, VGA_R, VGA_G, VGA_B,PS2C,PS2D,AUD_PWM,AUD_SD,
-            SD_CLK,SD_CMD,SD_DAT,SD_CD);  // SD card
+            VGA_HSYNC, VGA_VSYNC, VGA_R, VGA_G, VGA_B,PS2C,PS2D,AUD_PWM,AUD_SD);  // 新增
 
     input [4:0] btn_i;
     input clk;
@@ -17,10 +16,6 @@ module main(btn_i, clk, sw_i, rstn, led_o, disp_an_o, disp_seg_o,
     output [3:0]  VGA_B;
     output AUD_PWM;
     output AUD_SD;
-    output SD_CLK;
-    inout  SD_CMD;
-    inout  [3:0] SD_DAT;
-    input  SD_CD;
     inout PS2C;
 inout PS2D;
 wire [31:0] counter_out;
@@ -39,11 +34,6 @@ wire [31:0] counter_out;
     wire [3:0] mon_detune;
     wire [4:0] mon_filter;
     wire [4:0] mon_root;
-
-    wire sd_we;
-    wire [1:0] sd_reg_a;
-    wire [31:0] sd_wdata;
-    wire [31:0] sd_rdata;
 
     audio_interface U_AUDIO_INTERFACE(
         .clk(clk),
@@ -204,11 +194,7 @@ wire [31:0] ps2_scancode;
         .vram_dout(vram_dout),
         .ps2_ready(ps2_rd),
         .ps2_key(ps2_key),
-        .audio_addr(audio_addr),
-        .sd_we(sd_we),
-        .sd_reg_a(sd_reg_a),
-        .sd_wdata(sd_wdata),
-        .sd_rdata(sd_rdata)
+        .audio_addr(audio_addr)
     );
 
    
@@ -293,19 +279,4 @@ PS2IO U_PS2(
     .key        (ps2_key),
     .PS2Ready   (ps2_ready)
 );
-
-    // SD card controller (0xD0000000)
-    sd_controller U_SD(
-        .clk      (clk),
-        .rst      (~rstn),
-        .reg_a    (sd_reg_a),
-        .data_in  (sd_wdata),
-        .data_out (sd_rdata),
-        .we       (sd_we),
-        .sd_clk   (SD_CLK),
-        .sd_cmd   (SD_CMD),
-        .sd_dat   (SD_DAT),
-        .sd_cd    (SD_CD),
-        .sd_reset ()
-    );
 endmodule

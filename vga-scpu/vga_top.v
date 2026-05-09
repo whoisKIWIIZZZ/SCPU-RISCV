@@ -6,12 +6,13 @@
 // Changes vs original:
 //   1. Piano keyboard → scrolling MIDI piano roll (ring buffer, 256 time steps)
 //   2. Gradient: correct hue density, pastel palette, smooth vertical alpha
-//   3. Text labels use 1x font (8x8px per char) → 5 rows fit in 50px
+//   3. Text labels use 1x font (8x8px per char) → 5 rows fit in 40px
 //
 // Screen layout
-//   col[  8, 320] row[  4,  54]  text labels        (1x font, 10px/row x 5)
-//   col[  8, 200] row[ 54,  64]  ADDR hex display   (1x font)
+//   col[  8, 320] row[  4,  44]  text labels        (1x font, 8px/row x 5)
+//   col[  8, 200] row[ 44,  52]  ADDR hex display   (1x font, 8px/row)
 //   col[ 47, 559] row[190, 310]  piano roll         (256 cols x 2px, 21 rows x 5px)
+//   col[560, 632] row[190, 206]  chord display      (1x font, 2 rows)
 //   col[559, 640] row[190, 310]  roll right margin  (dark fill)
 //   col[  0, 320] row[320, 480]  flowing gradient
 //   col[384, 640] row[462, 478]  watermark          (2x font, unchanged)
@@ -200,9 +201,10 @@ wire roll_bit = roll_sh[roll_key][~roll_dcol];
 // Playhead: rightmost column (dcol==255)
 wire roll_is_head = (roll_dcol == 8'd255);
 
-// Horizontal grid: 1px at the bottom edge of each key row
+// Horizontal gap: 1px separator between keys (4px active + 1px gap per key)
 wire [8:0] rk5      = ({4'b0,roll_key}<<2) + {4'b0,roll_key};  // roll_key*5
-wire       roll_grid = in_keys & (roll_fl == rk5);
+wire [8:0] roll_rem  = roll_fl - rk5;          // 0..4 within each 5px key band
+wire       roll_gap  = in_keys & (roll_rem == 9'd4);  // 5th pixel = gap
 
 // ============================================================
 // 8.  Font ROM
@@ -212,25 +214,16 @@ wire [7:0] font_data;
 font_rom u_font(.a(font_addr), .spo(font_data));
 
 // ============================================================
-// 9.  Text labels  col[8,320]  row[4,54]   1x font (8x8)
-//     5 rows x 10px = 50px.
-//     Char row = ty/10  where ty=row-4
-//     Divide by 10: v*205>>11 exact for v in 0..49
+// 9.  Text labels  col[8,320]  row[4,44]   1x font, 8px/row
+//     5 rows x 8px = 40px.  Clean bit-slicing, no multiply.
 // ============================================================
-wire in_txt = (col >= 10'd8) & (col < 10'd320) & (row >= 9'd4) & (row < 9'd54);
+wire in_txt = (col >= 10'd8) & (col < 10'd320) & (row >= 9'd4) & (row < 9'd44);
 wire [9:0] tx      = col - 10'd8;
-wire [8:0] ty      = row - 9'd4;        // 0..49
+wire [8:0] ty      = row - 9'd4;        // 0..39
 wire [4:0] txt_cc  = tx[7:3];           // char col = tx/8
 wire [2:0] txt_px  = tx[2:0];           // pixel x within glyph
-wire [2:0] txt_py  = ty[2:0];           // pixel y within glyph (low 3 bits work because
-                                        //   the glyph is 8 rows and ty%10 < 8 always)
-
-wire [12:0] ty_m   = {4'b0,ty} * 9'd205;   // ty * 205
-wire [2:0]  txt_row = ty_m[12:10];          // >> 10 = ty/10 for ty<=49  (verify: 49*205=10045 >> 10 = 9 ... wait)
-// Correction: 49*205 = 10045; >>10 = 9. But we need 0..4.
-// Try >>11: 49*205=10045; >>11=4. 40*205=8200; >>11=4. 39*205=7995; >>11=3. Correct!
-// So use bits [12:11].
-wire [2:0] txt_row_c = ty_m[12:11];         // 0..4 correct
+wire [2:0] txt_py  = ty[2:0];           // pixel y within glyph
+wire [2:0] txt_row_c = ty[5:3];         // char row = ty/8  (0..4)
 
     function [7:0] digit_ch;
         input [3:0] v;
@@ -370,14 +363,14 @@ always @(*) begin
 end
 
 // ============================================================
-// 10. ADDR hex display  col[8,200]  row[54,64]   1x font
+// 10. ADDR hex display  col[8,200]  row[44,52]   1x font, 8px/row
 // ============================================================
 wire in_addr = (col >= 10'd8) & (col < 10'd200)
-             & (row >= 9'd54) & (row < 9'd64);
+             & (row >= 9'd44) & (row < 9'd52);
 wire [9:0] addr_rx      = col - 10'd8;
 wire [4:0] addr_ci      = addr_rx[6:3];           // char index (8px wide)
 wire [2:0] addr_px_bit  = addr_rx[2:0];           // pixel x in glyph
-wire [8:0] addr_row_off = row - 9'd54;
+wire [8:0] addr_row_off = row - 9'd44;
 wire [2:0] addr_py_c    = addr_row_off[2:0];      // pixel y in glyph (0..7)
 
 function [7:0] hex_ch;
@@ -412,7 +405,33 @@ always @(*) begin
 end
 
 // ============================================================
-// 11. Watermark  col[384,640]  row[462,478]   2x font (unchanged)
+// 11. Chord display region + submodule
+// ============================================================
+wire in_chord = (col >= 10'd560) & (col < 10'd632) & (row >= 9'd190) & (row < 9'd206);
+wire [9:0] ch_x      = col - 10'd560;
+wire [4:0] ch_cc     = ch_x[7:3];
+wire [2:0] ch_px     = ch_x[2:0];
+wire [8:0] ch_y      = row - 9'd190;
+wire [2:0] ch_py     = ch_y[2:0];
+wire       ch_row    = ch_y[3];
+
+wire       chord_valid;
+wire [2:0] chord_root;
+wire [1:0] chord_kind;
+wire [7:0] ch_ascii;
+
+chord_display u_chord (
+    .key_state   (key_state),
+    .ch_cc       (ch_cc),
+    .ch_row      (ch_row),
+    .chord_valid (chord_valid),
+    .chord_root  (chord_root),
+    .chord_kind  (chord_kind),
+    .ch_ascii    (ch_ascii)
+);
+
+// ============================================================
+// 12. Watermark  col[384,640]  row[462,478]   2x font (unchanged)
 // ============================================================
 wire in_wm = (col>=10'd384)&(col<10'd640)&(row>=9'd462)&(row<9'd478);
 wire [9:0] wmx   = col - 10'd384;
@@ -495,27 +514,32 @@ wire [3:0] b_grad = b_blend[7:4];
 // 13. Font ROM address mux
 // ============================================================
 always @(*) begin
-    if      (in_wm)   font_addr = {wm_ch(wm_ci),  wm_py       };
-    else if (in_txt)  font_addr = {txt_ascii,       txt_py      };
-    else if (in_addr) font_addr = {addr_ascii,      addr_py_c   };
-    else              font_addr = {8'h20,           3'b0        };
+    if      (in_chord) font_addr = {ch_ascii,         ch_py       };
+    else if (in_wm)    font_addr = {wm_ch(wm_ci),     wm_py       };
+    else if (in_txt)   font_addr = {txt_ascii,        txt_py      };
+    else if (in_addr)  font_addr = {addr_ascii,       addr_py_c   };
+    else               font_addr = {8'h20,            3'b0        };
 end
 
-wire wm_on   = in_wm   & font_data[7 - wm_px];
-wire txt_on  = in_txt  & font_data[7 - txt_px];
-wire addr_on = in_addr & font_data[7 - addr_px_bit];
+wire chord_on = in_chord & font_data[7 - ch_px];
+wire wm_on    = in_wm    & font_data[7 - wm_px];
+wire txt_on   = in_txt   & font_data[7 - txt_px];
+wire addr_on  = in_addr  & font_data[7 - addr_px_bit];
 
 // ============================================================
 // 14. Final pixel output
 // ============================================================
 reg [3:0] r_out, g_out, b_out;
 
-// Roll background (very dark blue-grey)
-localparam [3:0] RBR=4'h1, RBG=4'h1, RBB=4'h3;
+// Roll background (warm dark grey)
+localparam [3:0] RBR=4'h3, RBG=4'h2, RBB=4'h2;
 
 always @(*) begin
     if (!active) begin
         r_out=4'h0; g_out=4'h0; b_out=4'h0;
+
+    end else if (chord_on) begin
+        r_out=4'hF; g_out=4'hC; b_out=4'h0;      // gold chord text
 
     end else if (wm_on) begin
         r_out=4'h7; g_out=4'h7; b_out=4'h7;      // grey watermark
@@ -532,9 +556,9 @@ always @(*) begin
             if (roll_is_head) begin
                 r_out=4'hF; g_out=4'hF; b_out=4'hF;      // playhead white
             end else if (roll_bit) begin
-                r_out=4'h0; g_out=4'hE; b_out=4'hF;      // note cyan
-            end else if (roll_grid) begin
-                r_out=4'h2; g_out=4'h2; b_out=4'h5;      // grid subtle
+                r_out=4'hF; g_out=4'hA; b_out=4'h0;      // note amber
+            end else if (roll_gap) begin
+                r_out=4'h1; g_out=4'h1; b_out=4'h1;      // gap dark
             end else begin
                 r_out=RBR; g_out=RBG; b_out=RBB;          // bg
             end
@@ -548,7 +572,7 @@ always @(*) begin
 
     // ---- Dark background ----
     end else begin
-        r_out=4'h1; g_out=4'h1; b_out=4'h2;
+        r_out=4'h2; g_out=4'h1; b_out=4'h1;
     end
 end
 

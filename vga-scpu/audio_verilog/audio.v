@@ -292,8 +292,8 @@ always @(*) begin
     end
 end
 
-wire [22:0] mix_scaled = mix_sum * {9'b0, volume, 4'b0};  // volume * 16
-wire [9:0] vca_out = (|mix_scaled[22:18]) ? 10'd1023 : mix_scaled[17:8];
+wire [22:0] mix_scaled = mix_sum * {10'b0, volume, 3'b0};  // volume * 8
+wire [9:0] vca_out = (|mix_scaled[22:19]) ? 10'd1023 : mix_scaled[18:9];
 
 reg [9:0] vca_out_reg;
 always @(posedge clk or posedge rst) begin

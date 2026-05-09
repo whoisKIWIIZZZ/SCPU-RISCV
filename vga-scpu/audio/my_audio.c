@@ -21,6 +21,7 @@ void Entry()
 #define AUDIOFILTER_ADDR    0xB3000000   // reg 0x03: filter cutoff
 #define AUDIOPIANO_ADDR     0xB4000000   // reg 0x04: piano params
 #define VGA_ADDR            0xC0000000
+#define SD_CARD_ADDR        0xD0000000
 
 // =============================================================================
 // CPU-local variables (carefully spaced to avoid conflicts)
@@ -70,7 +71,7 @@ void write(int addr,int data)
     *p=data;
 }
 
-__attribute__((noinline)) void wait(int cycles){while(cycles--);}
+__attribute__((noinline))void wait(int cycles){asm volatile("1:addi %0,%0,-1;bnez %0,1b":"+r"(cycles));}
 
 void update_keys(uint32_t keys_mask) {
     *(volatile uint32_t*)VGA_ADDR = (uint32_t)(keys_mask & 0x1FFFFF);
@@ -154,7 +155,7 @@ __attribute__((interrupt)) void handler()
         }
         write(DISPLAY_BASE, keys_state);
         write(AUDIONOTE_ADDR, (int)keys_state);
-        f0_pending = 0;
+        write(DISPLAY_ADDR,(int)(keys_state));
     } else if (!f0_pending) {
         // control key: act on make (press) only
         int ctrl_changed = 0;
@@ -162,6 +163,7 @@ __attribute__((interrupt)) void handler()
         int piano_changed = 0;
 
         switch (key) {
+            // ---- synthesis control (0x01) ----
             case 0x16: // '1' — waveform cycle 0→1→2→3→4→0
                 wavet_state++;
                 if (wavet_state >= 5) wavet_state = 0;
@@ -184,11 +186,15 @@ __attribute__((interrupt)) void handler()
                 detune_state &= 0xF;
                 ctrl_changed = 1;
                 break;
+
+            // ---- filter (0x03) ----
             case 0x2E: // '5' — filter cutoff +1, wrap 0→31
                 filter_state++;
                 filter_state &= 0x1F;
                 write(AUDIOFILTER_ADDR, (int)filter_state);
                 break;
+
+            // ---- piano (0x04) ----
             case 0x36: // '6' — piano attack +16
                 piano_att += 16;
                 piano_changed = 1;
@@ -205,6 +211,8 @@ __attribute__((interrupt)) void handler()
                 piano_noise += 16;
                 piano_changed = 1;
                 break;
+
+            // ---- ADSR (0x02) ----
             case 0x45: // '0' — ADSR attack +16
                 adsr_att += 16;
                 adsr_changed = 1;
@@ -226,22 +234,61 @@ __attribute__((interrupt)) void handler()
         if (ctrl_changed)  write_ctrl();
         if (adsr_changed)  write_adsr();
         if (piano_changed) write_piano();
-        f0_pending = 0;
-    } else {
-        // f0_pending=1 but byte not in scan map: spurious byte during
-        // break sequence — don't clear f0_pending, don't touch display
-        return;
-    }
 
-    update_keys(keys_state);
-
-    if (bit_idx != -1) {
-        write(DISPLAY_ADDR, (int)(keys_state<<8|key));
-    } else {
         write_seg(key);
     }
+
+    // always consume f0_pending after the key byte arrives
+    f0_pending = 0;
+    update_keys(keys_state);
 }
 
+
+
+void sd_test()
+{
+    int i,val,errors,timeout;
+    write(DISPLAY_ADDR,0x8B5179); // "buSY"
+    // fill buffer with test pattern
+    for(i=0;i<SD_BLOCK_SIZE;i++)
+    {
+        write(SD_WORD_ADDR,i);
+        write(SD_DATA_ADDR,0xDEAD0000+i);
+    }
+    // write buffer to SD block 0
+    write(SD_BLK_ADDR,0);
+    write(SD_STATUS,3);
+    timeout=50000000;
+    do{read(SD_STATUS,&val);timeout--;}while((val&1)&&timeout>0);
+    if(!timeout){write(DISPLAY_ADDR,0x0d00E401);return;}
+    // read SD block 0 back to buffer
+    write(SD_BLK_ADDR,0);
+    write(SD_STATUS,1);
+    timeout=50000000;
+    do{read(SD_STATUS,&val);timeout--;}while((val&1)&&timeout>0);
+    if(!timeout){write(DISPLAY_ADDR,0x0d00E402);return;}
+    // diagnostic: read and display first word
+    write(SD_WORD_ADDR,0);
+    read(SD_DATA_ADDR,&val);
+    write(DISPLAY_ADDR,val);
+    wait(5000000);
+    // verify
+    errors=0;
+    for(i=0;i<SD_BLOCK_SIZE;i++)
+    {
+        write(SD_WORD_ADDR,i);
+        read(SD_DATA_ADDR,&val);
+        if(val!=(0xDEAD0000+i))
+            errors++;
+    }
+    if(errors==0)
+    {
+        write(DISPLAY_ADDR,0x9A55); // "PASS"
+        wait(3000000);
+    }
+    else
+        write(DISPLAY_ADDR,(errors<<16)|0xFA11); // "FAIL"+count
+}
 // =============================================================================
 // Initialization
 // =============================================================================
@@ -276,7 +323,6 @@ void init(){
     write(MAP_ADDR + (20<<2), (int)0x3C); // U → B6
 
     // --- init parameter defaults ---
-    f0_pending   = 0;
     wavet_state  = 0;    // square
     vol_state    = 8;    // volume 8
     unison_state = 4;    // 4 voices
@@ -291,6 +337,7 @@ void init(){
     piano_tail   = 16;
     piano_noise  = 128;
 
+    f0_pending=0;
     // --- push all registers ---
     write(DISPLAY_BASE,      (int)0);
     write(AUDIONOTE_ADDR,    (int)0);   // no notes active
