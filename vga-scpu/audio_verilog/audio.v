@@ -207,9 +207,38 @@ wire [1:0]  tdm_table_b   = pe_table_b[tdm_slot];
 wire        tdm_noise_en   = pe_noise_en[tdm_slot];
 wire [7:0]  tdm_noise_gain = pe_noise_gain[tdm_slot];
 
+// ---- pipeline delay: match BRAM 1-cycle read latency ----
+reg [7:0]  dt_cf_weight;
+reg [1:0]  dt_table_a, dt_table_b;
+reg        dt_noise_en;
+reg [7:0]  dt_noise_gain;
+reg [$clog2(MAX_SLOTS)-1:0]  dt_slot;
+reg [$clog2(MAX_VOICES)-1:0] dt_voice;
+
+always @(posedge clk or posedge rst) begin
+    if (rst) begin
+        dt_cf_weight <= 0;
+        dt_table_a   <= 0;
+        dt_table_b   <= 0;
+        dt_noise_en  <= 0;
+        dt_noise_gain <= 0;
+        dt_slot      <= 0;
+        dt_voice     <= 0;
+    end else begin
+        dt_cf_weight <= tdm_cf_weight;
+        dt_table_a   <= tdm_table_a;
+        dt_table_b   <= tdm_table_b;
+        dt_noise_en  <= tdm_noise_en;
+        dt_noise_gain <= tdm_noise_gain;
+        dt_slot      <= tdm_slot;
+        dt_voice     <= tdm_voice;
+    end
+end
+
 // ---- shared piano_table ----
 wire [9:0] pt_samp_a, pt_samp_b;
 piano_table pt (
+    .clk(clk),
     .phase(tdm_phase[31:24]),
     .table_sel_a(tdm_table_a),
     .table_sel_b(tdm_table_b),
@@ -218,15 +247,15 @@ piano_table pt (
 );
 
 // ---- crossfade: sample_a * (1-w) + sample_b * w ----
-wire [17:0] cf_mul_a = pt_samp_a * (10'd255 - {2'd0, tdm_cf_weight});
-wire [17:0] cf_mul_b = pt_samp_b * {2'd0, tdm_cf_weight};
+wire [17:0] cf_mul_a = pt_samp_a * (10'd255 - {2'd0, dt_cf_weight});
+wire [17:0] cf_mul_b = pt_samp_b * {2'd0, dt_cf_weight};
 wire [10:0] cf_sum   = {1'b0, cf_mul_a[17:8]} + {1'b0, cf_mul_b[17:8]};
 
 // ---- noise injection (attack phase only) ----
 wire [9:0]  noise_raw = lfsr[9:0];
-wire [17:0] noise_mul = noise_raw * {10'd0, tdm_noise_gain};
+wire [17:0] noise_mul = noise_raw * {10'd0, dt_noise_gain};
 wire [9:0]  noise_add = noise_mul[17:8];
-wire [10:0] voice_sample = tdm_noise_en ? (cf_sum + {1'b0, noise_add}) : cf_sum;
+wire [10:0] voice_sample = dt_noise_en ? (cf_sum + {1'b0, noise_add}) : cf_sum;
 
 // ---- per-slot accumulators (blocking accum + non-blocking output latch) ----
 reg [13:0] p_accum [0:MAX_SLOTS-1];
@@ -234,14 +263,16 @@ reg [9:0]  piano_slot_out [0:MAX_SLOTS-1];
 
 // combinational envelope scaling (used by latch logic below)
 wire [21:0] p_env_prod [0:MAX_SLOTS-1];
+wire [9:0]  p_slot_sat [0:MAX_SLOTS-1];
 genvar eps;
 generate
     for (eps = 0; eps < MAX_SLOTS; eps = eps + 1) begin : env_scale_gen
         assign p_env_prod[eps] = {8'd0, p_accum[eps]} * {14'd0, pe_env[eps]};
+        assign p_slot_sat[eps] = (p_env_prod[eps] >= 22'h200000) ? 10'd1023 : p_env_prod[eps][20:11];
     end
 endgenerate
 
-wire p_cycle_start = (p_tdm == 0);
+wire p_cycle_start_d = (p_tdm == 1);  // delayed domain: voice 0 ready at p_tdm=1
 
 integer pa_s;
 always @(posedge clk or posedge rst) begin
@@ -251,21 +282,21 @@ always @(posedge clk or posedge rst) begin
             piano_slot_out[pa_s] <= 10'd0;
         end
     end else begin
-        if (p_cycle_start) begin
-            // Latch previous round's accumulation (p_accum has full 64-voice sum)
+        if (p_cycle_start_d) begin
+            // Latch previous round (64 voices all accumulated)
             for (pa_s = 0; pa_s < MAX_SLOTS; pa_s = pa_s + 1) begin
                 if (slot_gates[pa_s] && unison > 0)
-                    piano_slot_out[pa_s] <= p_env_prod[pa_s][20:11];
+                    piano_slot_out[pa_s] <= p_slot_sat[pa_s];
                 else
                     piano_slot_out[pa_s] <= 10'd0;
                 p_accum[pa_s] <= 14'd0;
             end
-            // Seed slot 0 voice 0 (overrides p_accum[0] reset above; NB last-wins)
-            if (slot_gates[0] && unison > 0)
-                p_accum[0] <= {4'd0, voice_sample[9:0]};
+            // Seed with voice 0 sample (dt_slot=0, dt_voice=0 at p_tdm==1)
+            if (slot_gates[dt_slot] && dt_voice < unison)
+                p_accum[dt_slot] <= {4'd0, voice_sample[9:0]};
         end else begin
-            if (slot_gates[tdm_slot] && tdm_voice < unison)
-                p_accum[tdm_slot] <= p_accum[tdm_slot] + {4'd0, voice_sample[9:0]};
+            if (slot_gates[dt_slot] && dt_voice < unison)
+                p_accum[dt_slot] <= p_accum[dt_slot] + {4'd0, voice_sample[9:0]};
         end
     end
 end

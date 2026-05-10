@@ -9,14 +9,15 @@
 // =============================================================================
 
 module piano_table (
+    input  clk,
     input  [7:0] phase,          // 8-bit phase from phase_acc[31:24]
     input  [1:0] table_sel_a,    // table for port A
     input  [1:0] table_sel_b,    // table for port B
-    output [9:0] sample_a,       // 10-bit unsigned
+    output [9:0] sample_a,       // 10-bit unsigned (1 cycle latency)
     output [9:0] sample_b
 );
 
-    reg [9:0] lut [0:1023];      // 4 × 256 entries (slot 3 = attack copy, safety)
+    (* ram_style = "block" *) reg [9:0] lut [0:1023];  // 4 × 256 entries → BRAM36
 
     // clamp table_sel to avoid out-of-bounds if sel=3 is ever driven
     wire [1:0] ts_a = (table_sel_a == 2'd3) ? 2'd0 : table_sel_a;
@@ -24,8 +25,14 @@ module piano_table (
     wire [9:0] addr_a = {ts_a, phase};
     wire [9:0] addr_b = {ts_b, phase};
 
-    assign sample_a = lut[addr_a];
-    assign sample_b = lut[addr_b];
+    // Synchronous read → infers BRAM with 1-cycle output register
+    reg [9:0] sample_a_r, sample_b_r;
+    always @(posedge clk) begin
+        sample_a_r <= lut[addr_a];
+        sample_b_r <= lut[addr_b];
+    end
+    assign sample_a = sample_a_r;
+    assign sample_b = sample_b_r;
 
     // ---- LUT initialization ----
     integer i;
