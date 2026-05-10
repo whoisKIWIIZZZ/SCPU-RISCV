@@ -41,6 +41,7 @@ void Entry()
 
 // --- interrupt state ---
 #define f0_pending          (*(volatile uint8_t *)0x00000170)
+#define e0_pending          (*(volatile uint8_t *)0x00000171)
 
 // --- synthesis control params (one byte each) ---
 #define wavet_state         (*(volatile uint8_t *)0x00000180)
@@ -148,9 +149,10 @@ __attribute__((interrupt)) void handler()
         f0_pending = 1;
         return;
     }
-
-    // int *q = (int *)0xE0000000;
-    // *q = key;
+    if (key == 0xE0) {
+        e0_pending = 1;
+        return;
+    }
 
     // ---- search 21-entry white-key scan map ----
     int bit_idx = -1;
@@ -162,16 +164,16 @@ __attribute__((interrupt)) void handler()
     }
 
     if (bit_idx != -1) {
-        // note key: update bitmap
-        if (f0_pending) {
-            keys_state &= ~(1U << bit_idx);
-        } else {
+        // note key: update bitmap (ignore extended-key and break variants)
+        if (!e0_pending && !f0_pending) {
             keys_state |= (1U << bit_idx);
+        } else {
+            keys_state &= ~(1U << bit_idx);
         }
         write(DISPLAY_BASE, keys_state);
         write(AUDIONOTE_ADDR, (int)keys_state);
         write(DISPLAY_ADDR,(int)(keys_state));
-    } else if (!f0_pending) {
+    } else if (!f0_pending && !e0_pending) {
         // control key: act on make (press) only
         int ctrl_changed = 0;
         int adsr_changed = 0;
@@ -259,8 +261,9 @@ __attribute__((interrupt)) void handler()
         write_seg(key);
     }
 
-    // always consume f0_pending after the key byte arrives
+    // always consume pending flags after the key byte arrives
     f0_pending = 0;
+    e0_pending = 0;
     update_keys(keys_state);
 }
 
@@ -359,6 +362,7 @@ void init(){
     piano_noise  = 128;
 
     f0_pending=0;
+    e0_pending=0;
     sd_flag = FLAG_NONE;
     // --- push all registers ---
     write(DISPLAY_BASE,      (int)0);

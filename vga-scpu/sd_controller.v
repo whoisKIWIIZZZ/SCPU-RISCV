@@ -299,7 +299,7 @@ module sd_controller(
                     cs <= 0;
                     if(sck_fall) begin
                         mosi <= sr[7]; sr <= {sr[6:0],1'b0}; bit_cnt <= bit_cnt + 1;
-                        if(bit_cnt == 3'd7) begin bit_cnt <= 0; byte_cnt <= 0; wr_byte <= 0; sr <= buf_sd_rdata[31:24]; st <= S_WR_DATA; end
+                        if(bit_cnt == 3'd7) begin bit_cnt <= 0; byte_cnt <= 0; wr_byte <= 0; buf_sd_raddr <= wr_addr; sr <= buf_sd_rdata[31:24]; st <= S_WR_DATA; end
                     end
                 end
 
@@ -313,7 +313,7 @@ module sd_controller(
                             else if(byte_cnt == 10'd512) sr <= 8'hFF;
                             else if(byte_cnt == 10'd513) begin byte_cnt <= 0; timer <= 0; st <= S_WR_RESP; end
                             else begin
-                                if(wr_byte == 2'd3) begin wr_byte <= 0; wr_addr <= wr_addr + 1; sr <= buffer[wr_addr + 7'd1][31:24]; end
+                                if(wr_byte == 2'd3) begin wr_byte <= 0; wr_addr <= wr_addr + 1; buf_sd_raddr <= wr_addr + 7'd1; sr <= buffer[wr_addr + 7'd1][31:24]; end
                                 else begin wr_byte <= wr_byte + 1;
                                     case(wr_byte) 2'd0: sr <= buf_sd_rdata[23:16]; 2'd1: sr <= buf_sd_rdata[15:8]; 2'd2: sr <= buf_sd_rdata[7:0]; endcase
                                 end
