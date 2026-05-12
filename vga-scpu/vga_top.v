@@ -294,9 +294,9 @@ always @(*) begin
     txt_ascii = 8'h20;
     case (txt_row_c)
         3'd0: case(txt_cc)
-            5'd0:txt_ascii="U"; 5'd1:txt_ascii="N"; 5'd2:txt_ascii="I";
-            5'd3:txt_ascii="O"; 5'd4:txt_ascii="N"; 5'd9:txt_ascii=":";
-            5'd10:txt_ascii=digit_ch(mon_unison);
+            5'd0:txt_ascii="U"; 5'd1:txt_ascii="N"; 5'd2:txt_ascii="I"; 5'd3:txt_ascii="S";
+            5'd4:txt_ascii="O"; 5'd5:txt_ascii="N"; 5'd9:txt_ascii=":";
+            5'd11:txt_ascii=digit_ch(mon_unison);
             default:txt_ascii=" ";
         endcase
         3'd1: case(txt_cc)

@@ -28,6 +28,8 @@ wire [31:0] counter_out;
     wire [4:0] BTN_out;
     wire [15:0] SW_out;
         wire        ps2_ready;
+        reg  [1:0]  int_sync;
+        wire        int_synced;
 
     
     wire audio_we;
@@ -143,9 +145,18 @@ wire [31:0] ps2_scancode;
     wire [31:0] Data_out;
     wire [31:0] PC_out;
     wire [31:0] mret;
+    // INT synchronizer: PS2Ready (clk域) → Clk_CPU域
+    always @(posedge Clk_CPU or negedge rstn) begin
+        if (!rstn)
+            int_sync <= 2'b00;
+        else
+            int_sync <= {int_sync[0], ps2_ready};
+    end
+    assign int_synced = int_sync[1];
+
     SCPU U1_SCPU(
         .Data_in(Data_read),
-        .INT(ps2_ready),
+        .INT(int_synced),
         .MIO_ready(MIO_ready),
         .clk(Clk_CPU),
         .inst_in(ROM_output),

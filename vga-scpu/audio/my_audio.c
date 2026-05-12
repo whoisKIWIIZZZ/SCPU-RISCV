@@ -8,6 +8,10 @@ void Entry()
     asm("li\tsp,1024");
     main();
     DeadLoop:goto DeadLoop;
+    asm("jal\tx0,-4");
+    asm("jal\tx0,-4");
+    asm("jal\tx0,-4");
+    asm("jal\tx0,-4");
 }
 
 // =============================================================================
@@ -382,5 +386,13 @@ void main()
         sd_flag = FLAG_NONE;
     }
     goto loop;
+    asm("jal\tx0,-4");
+    asm("jal\tx0,-4");
+    asm("jal\tx0,-4");
+    asm("jal\tx0,-4");
+    asm("jal\tx0,-4");
+    asm("jal\tx0,-4");
+    asm("jal\tx0,-4");
+    asm("jal\tx0,-4");
 }
 #pragma GCC pop_options

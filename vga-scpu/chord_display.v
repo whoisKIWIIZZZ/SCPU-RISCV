@@ -82,17 +82,23 @@ assign chord_valid = any_triad;
 assign chord_kind = any_ninth   ? 2'd2 :
                     any_seventh ? 2'd1 : 2'd0;
 
-// Root selection: check in priority order per root
+// Root selection: only consider the highest-priority kind that matches.
+// Priority: ninth > seventh > triad.  Within a kind, use the first match.
 function automatic [2:0] find_root;
     input [6:0] n, s, t;
     reg [2:0] r;
     integer i;
     begin
         r = 3'd0;
-        for (i = 0; i < 7; i = i + 1) begin
-            if (n[i])       r = i[2:0];
-            else if (s[i])  r = i[2:0];
-            else if (t[i])  r = i[2:0];
+        if (|n) begin
+            for (i = 0; i < 7; i = i + 1)
+                if (n[i]) r = i[2:0];
+        end else if (|s) begin
+            for (i = 0; i < 7; i = i + 1)
+                if (s[i]) r = i[2:0];
+        end else begin
+            for (i = 0; i < 7; i = i + 1)
+                if (t[i]) r = i[2:0];
         end
         find_root = r;
     end
@@ -146,29 +152,29 @@ always @(*) begin
 
                 // ---- columns 2+ : quality suffix ----
                 5'd2: case (chord_kind)
-                    2'd0: ch_ascii = is_root_dim ? "d" : "m";          // maj/min/dim
+                    2'd0: ch_ascii = is_root_dim ? "d" : "m";
                     2'd1: ch_ascii = is_root_dom ? "7" : "m";          // 7/maj7/m7/m7b5
                     2'd2: ch_ascii = is_root_dom ? "9" : "m";          // 9/maj9/m9/m9b5
                     default: ch_ascii = " ";
                 endcase
 
                 5'd3: case (chord_kind)
-                    2'd0: ch_ascii = is_root_dim ? "i" : is_root_min ? "i" : "a";  // maj/min/dim
-                    2'd1: ch_ascii = is_root_dom ? " " : is_root_dim ? "7" : "a";  // 7: solo / m7b5: m7b5 / maj7: maj7 / m7: m7
-                    2'd2: ch_ascii = is_root_dom ? " " : is_root_dim ? "9" : "a";  // 9: solo / m9b5: m9b5 / maj9: maj9 / m9: m9
+                    2'd0: ch_ascii = is_root_dim ? "i" : is_root_min ? "i" : is_root_maj ? "a" : " ";
+                    2'd1: ch_ascii = is_root_dom ? " " : is_root_min ? "7" : is_root_dim ? "7" : "a";
+                    2'd2: ch_ascii = is_root_dom ? " " : is_root_min ? "9" : is_root_dim ? "9" : "a";
                     default: ch_ascii = " ";
                 endcase
 
                 5'd4: case (chord_kind)
-                    2'd0: ch_ascii = is_root_dim ? "m" : "j";          // maj/dim
-                    2'd1: ch_ascii = is_root_dom ? " " : is_root_dim ? "b" : "j";  // maj7/m7: j / m7b5: b
-                    2'd2: ch_ascii = is_root_dom ? " " : is_root_dim ? "b" : "j";  // maj9/m9: j / m9b5: b
+                    2'd0: ch_ascii = is_root_dim ? "m" : is_root_min ? "n" : is_root_maj ? "j" : " ";
+                    2'd1: ch_ascii = is_root_dom ? " " : is_root_min ? " " : is_root_dim ? "b" : "j";
+                    2'd2: ch_ascii = is_root_dom ? " " : is_root_min ? " " : is_root_dim ? "b" : "j";
                     default: ch_ascii = " ";
                 endcase
 
                 5'd5: case (chord_kind)
-                    2'd1: ch_ascii = is_root_dom ? " " : is_root_dim ? "5" : "7";  // maj7:7 / m7:7 / m7b5:5
-                    2'd2: ch_ascii = is_root_dom ? " " : is_root_dim ? "5" : "9";  // maj9:9 / m9:9 / m9b5:5
+                    2'd1: ch_ascii = is_root_dom ? " " : is_root_min ? " " : is_root_dim ? "5" : "7";
+                    2'd2: ch_ascii = is_root_dom ? " " : is_root_min ? " " : is_root_dim ? "5" : "9";
                     default: ch_ascii = " ";
                 endcase
 
