@@ -145,6 +145,32 @@ always @(posedge clk25 or posedge rst) begin
 end
 
 // ============================================================
+// 5b. Metronome beat tracking
+//      BEAT_FRAMES = ceil(3600 / BPM) at 60fps
+// ============================================================
+parameter BPM = 120;
+localparam [11:0] BEAT_FRAMES = (3600 + BPM/2) / BPM;
+
+reg [11:0] beat_cnt;
+always @(posedge clk25 or posedge rst)
+    if (rst) beat_cnt <= 12'd0;
+    else if (vsync_rise) begin
+        if (beat_cnt >= BEAT_FRAMES - 1)
+            beat_cnt <= 12'd0;
+        else
+            beat_cnt <= beat_cnt + 12'd1;
+    end
+
+wire beat_tick = vsync_rise & (beat_cnt == 0);
+
+// Beat marker SRL (same structure as roll_sh)
+reg [255:0] beat_sh;
+always @(posedge clk25) begin
+    if (vsync_rise)
+        beat_sh <= {beat_sh[254:0], beat_tick};
+end
+
+// ============================================================
 // 6.  Piano Roll — 21 SRL shift registers (no reset, no addr mux)
 //
 //     Each key has a 256-bit shift register.  On vsync_rise, shift
@@ -200,6 +226,9 @@ wire roll_bit = roll_sh[roll_key][~roll_dcol];
 
 // Playhead: rightmost column (dcol==255)
 wire roll_is_head = (roll_dcol == 8'd255);
+
+// Beat marker line
+wire beat_line = beat_sh[~roll_dcol];
 
 // Horizontal gap: 1px separator between keys (4px active + 1px gap per key)
 wire [8:0] rk5      = ({4'b0,roll_key}<<2) + {4'b0,roll_key};  // roll_key*5
@@ -557,11 +586,15 @@ always @(*) begin
                 r_out=4'hF; g_out=4'hF; b_out=4'hF;      // playhead white
             end else if (roll_bit) begin
                 r_out=4'hF; g_out=4'hA; b_out=4'h0;      // note amber
+            end else if (beat_line) begin
+                r_out=4'h6; g_out=4'h6; b_out=4'h6;      // beat grey
             end else if (roll_gap) begin
                 r_out=4'h1; g_out=4'h1; b_out=4'h1;      // gap dark
             end else begin
                 r_out=RBR; g_out=RBG; b_out=RBB;          // bg
             end
+        end else if (in_roll & beat_line) begin
+            r_out=4'h4; g_out=4'h4; b_out=4'h4;           // beat in margin
         end else begin
             r_out=RBR; g_out=RBG; b_out=RBB;              // spare/margin
         end

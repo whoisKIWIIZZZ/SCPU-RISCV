@@ -2,7 +2,9 @@
 
 module audio #(
     parameter MAX_SLOTS = 8,
-    parameter MAX_VOICES = 8
+    parameter MAX_VOICES = 8,
+    parameter VOL_DIV_SHIFT = 6,   // log2 divisor: 6=÷64 (safe), 5=÷32 (2x louder)
+    parameter LIMIT_EN = 1         // feedforward limiter: 1=on, 0=bypass
 )(
     input clk,
     input rst,
@@ -31,6 +33,8 @@ module audio #(
 );
 
 localparam WF_PIANO = 3'd4;
+localparam VOL_HI = VOL_DIV_SHIFT + 12;   // extract high bit  (18 for ÷64)
+localparam VOL_LO = VOL_DIV_SHIFT + 3;    // extract low bit   (9 for ÷64)
 
 wire [31:0] slot_freq [0:MAX_SLOTS-1];
 genvar gi;
@@ -323,8 +327,13 @@ always @(*) begin
     end
 end
 
-wire [22:0] mix_scaled = mix_sum * {9'b0, volume, 4'b0};  // volume * 8
-wire [9:0] vca_out = (|mix_scaled[22:19]) ? 10'd1023 : mix_scaled[18:9];
+// Feedforward limiter: -6dB soft clip when VCA would overflow
+wire [17:0] lim_check = {4'b0, mix_sum} * {14'b0, volume};
+wire        lim_hit   = LIMIT_EN && (lim_check > (18'd1023 << VOL_DIV_SHIFT));
+wire [13:0] mix_final = lim_hit ? {1'b0, mix_sum[13:1]} : mix_sum;
+
+wire [22:0] mix_scaled = mix_final * {10'b0, volume, 3'b0};
+wire [9:0]  vca_out = (|mix_scaled[22:VOL_HI+1]) ? 10'd1023 : mix_scaled[VOL_HI:VOL_LO];
 
 reg [9:0] vca_out_reg;
 always @(posedge clk or posedge rst) begin
