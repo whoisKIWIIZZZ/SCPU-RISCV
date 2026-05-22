@@ -19,7 +19,7 @@ module clk_div(
     always @(posedge clk or posedge rst) begin
         if (rst)
             clk_toggle <= 0;
-        else if (SW2 ? (clkdiv[2:0] == 3'b111) : (clkdiv[4:0] == 5'b11111))
+        else if (SW2 ? (clkdiv[22:0] == 23'b11111111111111111111111) : (clkdiv[0] == 1'b11))
             clk_toggle <= ~clk_toggle;
     end
 
