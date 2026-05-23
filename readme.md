@@ -1,6 +1,30 @@
-# SCPU-Pipeline
-基本流水线架构的CPU.
+# MIDI-Controller
+RISCV流水线架构的CPU,支持键盘中断/VGA显示/声音输出.
 
+Project Homepage : [here](https://whoiskiwiizzz.github.io/Projects/02-SCPU/)
+
+Video Preview: [here](https://www.bilibili.com/video/BV1r6Lw6mESC)
+
+## How to use
+你需要一个Vivado.创建一个A7的板子工程.加入所有的`.v`和约束文件.
+### IP config
+#### `ROM`
+Distributed Memory Generator,Depth 8192,Data Width 32, 导入COE: `midi.coe`.
+#### `RAM`
+Bolck Memory Generator,Singal Port RAM, Byte Write Enable,8bit, Width 32,Depth 2048.
+
+Enable Port Type **Always Enabled**.
+
+COE随便选一个导入即可,这不重要;必要的东西都在高级语言初始化了.
+#### `font_rom`
+旨在提供VGA的字符支持.
+和ROM一模一样,导入COE: `font_ascii_8_8.coe`.
+
+#### `piano_rom`
+旨在用IP核提供钢琴wavetable来避免时序问题.
+Block Memory Generator,**Dual Port ROM**,Port A width 16,Depth 2048;Enable Port Type **Always Enabled**.
+
+COE:`piano_rom.coe`.
 
 ## Hint
 ### Icarus Verilog
@@ -45,3 +69,5 @@ assign jump_target = (forward_A_val + ID_EX_imm) & ~32'b1;//new
 - 4.22 成功测试键盘中断,现在他可以在显示器上实现初步的MIDI可视化功能了.
 # Acknowledge
 - thx [Zoomy](https://github.com/zoomy14112/SingleCPU)
+- thx [megakite](https://www.bilibili.com/video/BV1Vt411D7Ps), who guided me towards the Electronic Music production. VGA display is built inspired of his video.
+- thx [Bestune](https://space.bilibili.com/100556278), who gave me a lot of MIDI to practice , and write the melody of the [song](https://music.163.com/#/song?id=2029041492) which i played in the video.
