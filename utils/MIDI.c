@@ -14,9 +14,6 @@ void Entry()
     asm("jal\tx0,-4");
 }
 
-// =============================================================================
-// Memory-mapped I/O addresses
-// =============================================================================
 #define DISPLAY_ADDR        0xE0000000
 #define KEYBOARD_ADDR       0xA0000000
 #define AUDIONOTE_ADDR      0xB0000000   // reg 0x00: key_bitmap[20:0]
@@ -32,22 +29,15 @@ void Entry()
 #define SD_WORD_ADDR        (SD_CARD_ADDR + 0xC)
 #define SD_BLOCK_SIZE       128
 
-// =============================================================================
-// CPU-local variables (carefully spaced to avoid conflicts)
-// =============================================================================
 
-// --- scan map: 21 ints = 84 bytes, occupies 0x100 .. 0x153 ---
 #define MAP_ADDR            0x00000100
 #define SCAN_MAP_IN_MEM     ((volatile int*)0x00000100)
 
-// --- keys_state: read/write by handler, kept at safe distance ---
 #define DISPLAY_BASE        0x00000160
 
-// --- interrupt state ---
 #define f0_pending          (*(volatile uint8_t *)0x00000170)
 #define e0_pending          (*(volatile uint8_t *)0x00000171)
 
-// --- synthesis control params (one byte each) ---
 #define wavet_state         (*(volatile uint8_t *)0x00000180)
 #define vol_state           (*(volatile uint8_t *)0x00000184)
 #define unison_state        (*(volatile uint8_t *)0x00000188)
@@ -62,14 +52,14 @@ void Entry()
 #define piano_tail          (*(volatile uint8_t *)0x000001AC)
 #define piano_noise         (*(volatile uint8_t *)0x000001B0)
 
-// --- sd test trigger ---
 #define FLAG_NONE           0
 #define FLAG_SD_TEST        1
 #define sd_flag             (*(volatile uint8_t *)0x000001B4)
 
-// =============================================================================
-// Forward declarations
-// =============================================================================
+#define FLAG_PLAY          1
+#define play_flag          (*(volatile uint8_t *)0x00000008)
+
+
 void wait(int cycles);
 void write(int addr,int data);
 void update_keys(uint32_t keys_mask);
@@ -77,9 +67,7 @@ void write_ctrl();
 void write_adsr();
 void write_piano();
 
-// =============================================================================
-// Helpers
-// =============================================================================
+
 void read(int addr,int *data)
 {
     int *p=(int *)addr;
@@ -251,7 +239,12 @@ __attribute__((interrupt)) void handler()
                 adsr_changed = 1;
                 break;
 
-            // ---- SD test ----
+            // ---- song play trigger ----
+            case 0x29: // Space — play song
+               // play_flag = FLAG_PLAY;
+                break;
+
+                        // ---- SD test ----
             case 0x5A: // Enter — trigger SD card read/write test
                 sd_flag = FLAG_SD_TEST;
                 write(DISPLAY_ADDR, 0x8B5179); // "buSY"
@@ -271,55 +264,6 @@ __attribute__((interrupt)) void handler()
     update_keys(keys_state);
 }
 
-
-
-void sd_test()
-{
-    int i,val,errors,timeout;
-    write(DISPLAY_ADDR,0x8B5179); // "buSY"
-    // fill buffer with test pattern
-    for(i=0;i<SD_BLOCK_SIZE;i++)
-    {
-        write(SD_WORD_ADDR,i);
-        write(SD_DATA_ADDR,0xDEAD0000+i);
-    }
-    // write buffer to SD block 0
-    write(SD_BLK_ADDR,0);
-    write(SD_STATUS,3);
-    timeout=50000000;
-    do{read(SD_STATUS,&val);timeout--;}while((val&1)&&timeout>0);
-    if(!timeout){write(DISPLAY_ADDR,0x0d00E401);return;}
-    // read SD block 0 back to buffer
-    write(SD_BLK_ADDR,0);
-    write(SD_STATUS,1);
-    timeout=50000000;
-    do{read(SD_STATUS,&val);timeout--;}while((val&1)&&timeout>0);
-    if(!timeout){write(DISPLAY_ADDR,0x0d00E402);return;}
-    // diagnostic: read and display first word
-    write(SD_WORD_ADDR,0);
-    read(SD_DATA_ADDR,&val);
-    write(DISPLAY_ADDR,val);
-    wait(5000000);
-    // verify
-    errors=0;
-    for(i=0;i<SD_BLOCK_SIZE;i++)
-    {
-        write(SD_WORD_ADDR,i);
-        read(SD_DATA_ADDR,&val);
-        if(val!=(0xDEAD0000+i))
-            errors++;
-    }
-    if(errors==0)
-    {
-        write(DISPLAY_ADDR,0x9A55); // "PASS"
-        wait(3000000);
-    }
-    else
-        write(DISPLAY_ADDR,(errors<<16)|0xFA11); // "FAIL"+count
-}
-// =============================================================================
-// Initialization
-// =============================================================================
 void init(){
     // --- scan map: 21 white keys C4—B6, 3 keyboard rows ---
 
@@ -368,6 +312,7 @@ void init(){
     f0_pending=0;
     e0_pending=0;
     sd_flag = FLAG_NONE;
+    play_flag = FLAG_NONE;
     // --- push all registers ---
     write(DISPLAY_BASE,      (int)0);
     write(AUDIONOTE_ADDR,    (int)0);   // no notes active
@@ -381,10 +326,10 @@ void main()
 {
     init();
     loop:
-    if (sd_flag == FLAG_SD_TEST) {
-        sd_test();
-        sd_flag = FLAG_NONE;
-    }
+    // if (play_flag == FLAG_PLAY) {
+    //     play_flag = 0;
+    //     //play_song();
+    // }
     goto loop;
     asm("jal\tx0,-4");
     asm("jal\tx0,-4");

@@ -4,3 +4,5 @@ SCPU_RISCV/
 test_vga/
 audio/
 流水线仿真调试-iverilog/
+report/
+.claude/
