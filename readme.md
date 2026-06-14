@@ -111,7 +111,7 @@ force uut.U9_Counter_x.counter_ch = 2'b0;
 //同时,代码里不能有对counter赋值的语句.
 ```
 
-### 3.fuck interrupt
+### 3.??? interrupt
 并且,![thx zoomy](image.png).所以,在`coe`的末尾,加上
 ```asm
 ff9ff06f
